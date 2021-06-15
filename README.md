@@ -2,7 +2,8 @@
 The Spark log parser parses unmodified Spark output logs.
 
 Parsed logs contain metadata pertaining to your Spark application execution. Particularly, the runtime for a task, the amount of data read & written, the amount of memory used, etc. These logs do not contain
-sensitive information such as the data that your Spark application is processing. 
+sensitive information such as the data that your Spark application is processing. Below is an example of the output of the log parser
+![Output of Log Parser](https://github.com/synccomputingcode/spark_log_parser/blob/main/docs/output.png)
 
 # Installation
 Clone this repo to the desired directory.
