@@ -10,7 +10,7 @@ Clone this repo to the desired directory.
 
 # Getting Started
 ### Step 0: Generate the appropriate Apache Spark EMR log
-If you have not already done so, complete the steps to download the spark event log
+If you have not already done so, complete the [instructions](https://github.com/synccomputingcode/spark_log_parser/blob/main/docs/event_log_download.pdf) to download the spark event log
 
 ### Step 1: Parse the log to strip away sensitive information
 1. To process a log file, execute the parse.py script in the sync_parser folder, and provide a
