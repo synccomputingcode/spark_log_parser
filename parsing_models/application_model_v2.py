@@ -196,7 +196,9 @@ class sparkApplication():
                 'stage_ids': [stage_ids],
                 'submission_time': [job.submission_time - refTime],
                 'completion_time': [job.completion_time - refTime],
-                'duration': [job.completion_time - job.submission_time]
+                'duration': [job.completion_time - job.submission_time],
+                'submission_timestamp': [job.submission_time],
+                'completion_timestamp': [job.completion_time]
             }))
 
         if len(df)>0:
@@ -532,6 +534,8 @@ class sparkApplication():
 
     def getAllMetaData(self, appobj):
         self.sparkMetadata = (appobj.spark_metadata)
+        self.metadata = {"app_name": appobj.app_name,
+                         "start_time": appobj.start_time}
     
     def assignTasksToCores(self):
         t1 = time.time()
@@ -600,7 +604,7 @@ class sparkApplication():
         if self.existsExecutors:
             saveDat['executors'] = self.executorData.reset_index().to_dict('list')
 
-        saveDat['metadata']      = self.metadata
+        saveDat['metadata'] = self.metadata
         saveDat['sparkMetadata'] = self.sparkMetadata
         saveDat['metadata']['existsSQL']       = self.existsSQL
         saveDat['metadata']['existsExecutors'] = self.existsExecutors 

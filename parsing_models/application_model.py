@@ -179,6 +179,7 @@ class ApplicationModel:
 
                 elif event_type == "SparkListenerApplicationStart":
                     self.start_time = json_data["Timestamp"]/1000
+                    self.app_name = json_data["App Name"]
 
                 elif event_type == "SparkListenerApplicationEnd":
                     self.finish_time = json_data["Timestamp"]/1000
