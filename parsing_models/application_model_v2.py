@@ -536,6 +536,14 @@ class sparkApplication():
         self.sparkMetadata = (appobj.spark_metadata)
         self.metadata = {"app_name": appobj.app_name,
                          "start_time": appobj.start_time}
+
+
+    def addMetadata(self, key=None, value=None):
+
+        if (key is None) or (value is None):
+            logging.error('key and value must both be supplied.')
+            
+        self.metadata[key] = value
     
     def assignTasksToCores(self):
         t1 = time.time()
