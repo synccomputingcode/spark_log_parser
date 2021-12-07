@@ -189,7 +189,9 @@ class TaskModel:
 
     # Added by SDG 4/30/2021 for further breakdown of "compute" time
     def task_compute_time(self):
-        task_compute_time = self.compute_time() - self.executor_deserialize_time - self.result_serialization_time
+        task_compute_time = self.compute_time_without_gc() - self.executor_deserialize_time 
+        - self.result_serialization_time
+        
         return task_compute_time
 
     def runtime(self):
