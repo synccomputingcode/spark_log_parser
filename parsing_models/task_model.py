@@ -34,9 +34,10 @@ class TaskModel:
         self.finish_time = task_info["Finish Time"]/1000 # [s]
         self.task_id     = task_info['Task ID']
         self.executor = task_info["Host"]
-        self.executor_run_time = task_metrics["Executor Run Time"]/1000 # [s]
-        self.executor_deserialize_time = task_metrics["Executor Deserialize Time"]/1000 # [s]
-        self.result_serialization_time = task_metrics["Result Serialization Time"]/1000 # [s]#
+        self.executor_run_time = task_metrics["Executor Run Time"]/1000 # [ms --> s]
+        self.executor_cpu_time = task_metrics["Executor CPU Time"]/1000000000 # [ns --> s]
+        self.executor_deserialize_time = task_metrics["Executor Deserialize Time"]/1000 # [ms --> s]
+        self.result_serialization_time = task_metrics["Result Serialization Time"]/1000 # [ms --> s]#
         self.gc_time = task_metrics["JVM GC Time"]/1000 # [s]
         self.memory_bytes_spilled = task_metrics["Memory Bytes Spilled"]/1000000 # [MB]
         self.disk_bytes_spilled = task_metrics["Disk Bytes Spilled"]/1000000 # [MB]

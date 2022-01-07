@@ -129,8 +129,12 @@ class sparkApplication():
                 if 'end_time' not in sql.keys():
                     sql['end_time'] = appobj.finish_time
                 
-                if ((job.submission_time >= sql['start_time']) and (job.submission_time <= sql['end_time'])) or \
-                   ((job.completion_time >= sql['start_time']) and (job.completion_time <= sql['end_time'])):
+                if ((job.submission_time >= sql['start_time']) and (job.submission_time <= sql['end_time'])):
+
+                    if 'completion_time' not in job.__dict__:
+                       logging.debug(f'Job {jid} missing completion time. Substituting with associated SQL {sqlid} completion time')
+                       job.completion_time = sql['end_time']
+                   
 
                     sql_jobs.append(jid)               
                     for sid, stage in job.stages.items():
@@ -252,6 +256,7 @@ class sparkApplication():
         # Time-based performance metrics
         executor_run_time         = []
         executor_deserialize_time = []
+        executor_cpu_time         = []
         result_serialization_time = []
         gc_time                   = []
         scheduler_delay           = []
@@ -298,6 +303,7 @@ class sparkApplication():
                     executor_run_time.append(         task.executor_run_time)
                     executor_deserialize_time.append( task.executor_deserialize_time)
                     result_serialization_time.append( task.result_serialization_time)
+                    executor_cpu_time.append(         task.executor_cpu_time)
                     gc_time.append(                   task.gc_time)
                     scheduler_delay.append(           task.scheduler_delay)
                     fetch_wait_time.append(           task.fetch_wait)
@@ -343,6 +349,7 @@ class sparkApplication():
             'executor_run_time'        : executor_run_time,
             'executor_deserialize_time': executor_deserialize_time,
             'result_serialization_time': result_serialization_time,
+            'executor_cpu_time'        : executor_cpu_time,
             'gc_time'                  : gc_time,
             'scheduler_delay'          : scheduler_delay,
             'fetch_wait_time'          : fetch_wait_time,
@@ -397,6 +404,7 @@ class sparkApplication():
         executor_run_time = []
         executor_deserialize_time = []
         result_serialization_time = []
+        executor_cpu_time = []
         gc_time = []
         scheduler_delay = []
         fetch_wait_time = []
@@ -405,6 +413,7 @@ class sparkApplication():
         task_compute_time = []
         input_read_time = []
         output_write_time = []
+        shuffle_write_time = []
         
 
         task_ids = []
@@ -430,6 +439,8 @@ class sparkApplication():
                 parents.append(appobj.dag.parents_dag_dict[sid])
                 rdd_ids.append(appobj.dag.stage_rdd_dict[sid])
                 
+
+
                 stage_info_dict = {
                     'stage_name': stage.stage_info['Stage Name'],
                     'num_tasks': stage.stage_info['Number of Tasks'],
@@ -454,6 +465,7 @@ class sparkApplication():
                 executor_run_time.append(         taskData['executor_run_time'].sum())
                 executor_deserialize_time.append( taskData['executor_deserialize_time'].sum())
                 result_serialization_time.append( taskData['result_serialization_time'].sum())
+                executor_cpu_time.append(         taskData['executor_cpu_time'].sum())
                 gc_time.append(                   taskData['gc_time'].sum())
                 scheduler_delay.append(           taskData['scheduler_delay'].sum())
                 fetch_wait_time.append(           taskData['fetch_wait_time'].sum())
@@ -462,7 +474,7 @@ class sparkApplication():
                 task_compute_time.append(         taskData['task_compute_time'].sum())
                 input_read_time.append(           taskData['input_read_time'].sum())
                 output_write_time.append(         taskData['output_write_time'].sum())
-                
+                shuffle_write_time.append(        taskData['shuffle_write_time'].sum())
 
         df = pd.DataFrame({
             'stage_id': stage_id,
@@ -488,6 +500,7 @@ class sparkApplication():
             'executor_run_time' : executor_run_time,
             'executor_deserialize_time': executor_deserialize_time,
             'result_serialization_time': result_serialization_time,
+            'executor_cpu_time':         executor_cpu_time,
             'gc_time': gc_time,
             'scheduler_delay': scheduler_delay,
             'fetch_wait_time': fetch_wait_time,
@@ -495,7 +508,8 @@ class sparkApplication():
             'compute_time':    compute_time,
             'task_compute_time': task_compute_time,
             'input_read_time':   input_read_time,
-            'output_write_time': output_write_time
+            'output_write_time': output_write_time,
+            'shuffle_write_time': shuffle_write_time
         })
                  
         logging.info('Aggregated stage data [%.2fs]' % (time.time()-t1))  

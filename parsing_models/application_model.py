@@ -121,16 +121,23 @@ class ApplicationModel:
                     for jid in self.jobs_for_stage[stage_id]:
                         self.jobs[jid].add_event(json_data, True)
                      
-                elif event_type == "SparkListenerStageCompleted":
-                    stage_id = json_data['Stage Info']["Stage ID"]
+                elif event_type == "SparkListenerStageSubmitted":
 
                     # stages may not be executed exclusively from one job
+                    stage_id = json_data['Stage Info']["Stage ID"]
                     for job_id in self.jobs_for_stage[stage_id]:
                         self.jobs[job_id].stages[stage_id].submission_time = json_data['Stage Info']['Submission Time']/1000
-                        self.jobs[job_id].stages[stage_id].completion_time = json_data['Stage Info']['Completion Time']/1000
                         self.jobs[job_id].stages[stage_id].stage_name = json_data['Stage Info']['Stage Name']
                         self.jobs[job_id].stages[stage_id].num_tasks = json_data['Stage Info']['Number of Tasks']
                         self.jobs[job_id].stages[stage_id].stage_info = json_data['Stage Info']
+
+                elif event_type == "SparkListenerStageCompleted":
+                
+                    # stages may not be executed exclusively from one job
+                    stage_id = json_data['Stage Info']["Stage ID"]
+                    for job_id in self.jobs_for_stage[stage_id]:
+                        self.jobs[job_id].stages[stage_id].completion_time = json_data['Stage Info']['Completion Time']/1000
+
 
                 elif event_type == "SparkListenerEnvironmentUpdate":
 
@@ -185,6 +192,7 @@ class ApplicationModel:
                     self.finish_time = json_data["Timestamp"]/1000
 
                 elif event_type == "org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart":
+
                     sql_id = json_data['executionId']
                     self.sql[sql_id]['start_time']  = json_data['time']/1000
                     self.sql[sql_id]['description'] = json_data['description']
