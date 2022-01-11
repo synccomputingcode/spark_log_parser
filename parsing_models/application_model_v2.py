@@ -22,11 +22,6 @@ class sparkApplication():
         stdout   = None,
         debug    = False
         ):
-
-        if debug == True:
-            logging.getLogger().setLevel(logging.DEBUG)
-        else:
-            logging.getLogger().setLevel(logging.WARNING)
             
         self.eventlog = eventlog
         self.existsSQL = False
