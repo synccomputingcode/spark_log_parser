@@ -237,12 +237,15 @@ class sparkApplication():
         start_time     = []
         end_time       = []
         duration       = []
-        input_mb       = []
+        #input_mb       = []
         remote_mb_read = []
         locality       = []
 
         # Disk-based performance metrics
         input_mb             = []
+        output_mb             = []
+        peak_execution_memory = []
+        shuffle_mb_written = []
         remote_mb_read       = []
         memory_bytes_spilled = []
         disk_bytes_spilled   = []
@@ -288,6 +291,9 @@ class sparkApplication():
 
                     # Disk-based performance metrics
                     input_mb.append(             task.input_mb)
+                    output_mb.append(             task.output_mb)
+                    peak_execution_memory.append(             task.peak_execution_memory)
+                    shuffle_mb_written.append(             task.shuffle_mb_written)
                     remote_mb_read.append(       task.remote_mb_read)
                     memory_bytes_spilled.append( task.memory_bytes_spilled)
                     disk_bytes_spilled.append(   task.disk_bytes_spilled)
@@ -329,12 +335,15 @@ class sparkApplication():
             'start_time'    : start_time, 
             'end_time'      : end_time,
             'duration'      : duration,
-            'input_mb'      : input_mb,
+            #'input_mb'      : input_mb,
             'remote_mb_read': remote_mb_read,
             'locality'      : locality,
 
             # Disk-based performance metrics
             'input_mb'            : input_mb,
+            'output_mb'            : output_mb,
+            'peak_execution_memory'            : peak_execution_memory,
+            'shuffle_mb_written'            : shuffle_mb_written,
             'remote_mb_read'      : remote_mb_read,
             'memory_bytes_spilled': memory_bytes_spilled,
             'disk_bytes_spilled'  : disk_bytes_spilled,
@@ -391,6 +400,9 @@ class sparkApplication():
         task_time   = []
 
         input_mb    = []
+        output_mb    = []
+        peak_execution_memory    = []
+        shuffle_mb_written    = []
         remote_mb_read = []
         memory_bytes_spilled = []
         disk_bytes_spilled = []
@@ -452,6 +464,9 @@ class sparkApplication():
                 task_time.append(   taskData['duration'].sum())
 
                 input_mb.append(             taskData['input_mb'].sum())
+                output_mb.append(             taskData['output_mb'].sum())
+                peak_execution_memory.append(             taskData['peak_execution_memory'].max())
+                shuffle_mb_written.append(             taskData['shuffle_mb_written'].sum())
                 remote_mb_read.append(       taskData['remote_mb_read'].sum())
                 memory_bytes_spilled.append( taskData['memory_bytes_spilled'].sum())
                 disk_bytes_spilled.append(   taskData['disk_bytes_spilled'].sum())
@@ -487,6 +502,9 @@ class sparkApplication():
             'task_time' : task_time,
 
             'input_mb'  : input_mb,
+            'output_mb'  : output_mb,
+            'peak_execution_memory'  : peak_execution_memory,
+            'shuffle_mb_written'  : shuffle_mb_written,
             'remote_mb_read' : remote_mb_read,
             'memory_bytes_spilled' : memory_bytes_spilled,
             'disk_bytes_spilled'   : disk_bytes_spilled,

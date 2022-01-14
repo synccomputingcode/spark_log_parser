@@ -93,11 +93,13 @@ class TaskModel:
             # self.input_read_method = input_metrics["Data Read Method"]
             self.input_mb = input_metrics["Bytes Read"] / 1048576.
 
-        # TODO: add write time and MB.
-        self.output_write_time = 0 #int(items_dict["OUTPUT_WRITE_BLOCKED_NANOS"]) / 1.0e6
-        self.output_mb = 0
-        #if "OUTPUT_BYTES" in items_dict:
-        #  self.output_mb = int(items_dict["OUTPUT_BYTES"]) / 1048576.
+        OUTPUT_METRICS_KEY = "Output Metrics"
+        self.output_mb, self.output_write_time = 0, 0 # TODO: fill in once output time has been added.
+
+        if OUTPUT_METRICS_KEY in task_metrics:
+            output_metrics = task_metrics[OUTPUT_METRICS_KEY]
+            self.output_mb = int(output_metrics["Bytes Written"]) / 1048576.
+
 
         self.has_fetch = True
         # False if the task was a map task that did not run locally with its input data.
