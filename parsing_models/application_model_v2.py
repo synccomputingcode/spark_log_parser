@@ -163,7 +163,7 @@ class sparkApplication():
                 end_time = executor.end_time/1000 - appobj.start_time
             else:
                 #print('None detected')
-                end_time = executor.end_time
+                end_time = appobj.finish_time - appobj.start_time
 
             df['executor_id'].append(xid)
             df['cores']      .append(executor.cores)

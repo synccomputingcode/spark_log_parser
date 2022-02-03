@@ -134,6 +134,7 @@ class ApplicationModel:
                 elif event_type == "SparkListenerStageCompleted":
                 
                     # stages may not be executed exclusively from one job
+                    self.finish_time = json_data['Stage Info']['Completion Time']/1000
                     stage_id = json_data['Stage Info']["Stage ID"]
                     for job_id in self.jobs_for_stage[stage_id]:
                         self.jobs[job_id].stages[stage_id].completion_time = json_data['Stage Info']['Completion Time']/1000
