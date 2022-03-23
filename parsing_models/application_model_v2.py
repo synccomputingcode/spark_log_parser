@@ -11,8 +11,6 @@ import logging
 import boto3
 from collections import defaultdict
 
-logging.basicConfig(format='%(levelname)s:%(message)s')
-
 class sparkApplication():
     
     def __init__(self, 
@@ -20,13 +18,12 @@ class sparkApplication():
         appobj   = None, # application_model object
         eventlog = None, # spark eventlog path,
         stdout   = None,
-        debug    = False
         ):
             
         self.eventlog = eventlog
         self.existsSQL = False
         self.existsExecutors = False
-        self.sparkMetadata = {}
+        #self.sparkMetadata = {}
         self.metadata = {}
         self.stdout = stdout
 
@@ -157,13 +154,13 @@ class sparkApplication():
         df = defaultdict(lambda: [])
         for xid, executor in appobj.executors.items():
 
-            #print(executor.end_time)
+            # print(executor.end_time)
             # Special case for handling end_time
             if executor.end_time is not None:
                 end_time = executor.end_time/1000 - appobj.start_time
             else:
-                #print('None detected')
-                end_time = appobj.finish_time - appobj.start_time
+                # print('None detected')
+                end_time = executor.end_time
 
             df['executor_id'].append(xid)
             df['cores']      .append(executor.cores)
@@ -336,7 +333,9 @@ class sparkApplication():
             'end_time'      : end_time,
             'duration'      : duration,
             #'input_mb'      : input_mb,
-            'remote_mb_read': remote_mb_read,
+
+            # Duplicate entry:
+            # 'remote_mb_read': remote_mb_read,
             'locality'      : locality,
 
             # Disk-based performance metrics
@@ -560,11 +559,24 @@ class sparkApplication():
         self.accumData = df  
 
     def getAllMetaData(self, appobj):
-        self.sparkMetadata = (appobj.spark_metadata)
-        self.metadata = {"app_name": appobj.app_name,
-                         "start_time": appobj.start_time}
 
+        #self.sparkMetadata = (appobj.spark_metadata)
 
+        self.metadata = {
+            'application_info' : {
+                'timestamp_start_ms' : int(appobj.start_time*1000),
+                'timestamp_end_ms' : int(appobj.finish_time*1000),
+                'runtime_sec' : appobj.finish_time - appobj.start_time,
+                'name' : appobj.app_name,
+                'id' : appobj.spark_metadata['spark.app.id'],
+                'spark_version' : appobj.spark_version,
+                'cloud_platform' : appobj.cloud_platform,
+                'cloud_provider' : appobj.cloud_provider
+
+            },
+            'spark_params' : appobj.spark_metadata
+        }
+    
     def addMetadata(self, key=None, value=None):
 
         if (key is None) or (value is None):
@@ -640,7 +652,7 @@ class sparkApplication():
             saveDat['executors'] = self.executorData.reset_index().to_dict('list')
 
         saveDat['metadata'] = self.metadata
-        saveDat['sparkMetadata'] = self.sparkMetadata
+        #saveDat['sparkMetadata'] = self.sparkMetadata
         saveDat['metadata']['existsSQL']       = self.existsSQL
         saveDat['metadata']['existsExecutors'] = self.existsExecutors 
 
@@ -703,13 +715,28 @@ class sparkApplication():
         self.metadata        = saveDat['metadata']
         self.existsSQL       = self.metadata.pop('existsSQL')
         self.existsExecutors = self.metadata.pop('existsExecutors')
-        self.sparkMetadata   = saveDat.pop('sparkMetadata')
-        
 
-        if 'jobData' in saveDat:   self.jobData   = pd.DataFrame.from_dict(saveDat['jobData']  ).set_index('job_id')
+        # This is for legacy support and should be removed after it is in production for a few
+        # weeks. Introduced 3/9/2022 by SDG.
+        if 'sparkMetadata' in saveDat:
+            self.sparkMetadata   = saveDat.pop('sparkMetadata')
+        
+        # SPC113 - SDG
+        # Because of the way jobData is created, if there are no job Events in the eventlog then the
+        # correct fields will not exist. A second condition checking for the 'job_id' field is 
+        # necessary here to ensure this method will run if this is the case.
+        #
+        # Note: stageData is initialized differently so this same issue does not exist for that
+        # structure. Furthermore, in the event that 'jobData' has no values within, 'stageData' will
+        # also have no values and an invalidLog exception will be thrown during log validation
+        # in SparkApplicaionAdvanced.
+        if ('jobData' in saveDat) and ('job_id' in saveDat['jobData']):
+            self.jobData = pd.DataFrame.from_dict(saveDat['jobData'])
+            self.jobData = self.jobData.set_index('job_id')
+
         if 'stageData' in saveDat: self.stageData = pd.DataFrame.from_dict(saveDat['stageData']).set_index('stage_id')
         if 'taskData' in saveDat:  self.taskData  = pd.DataFrame.from_dict(saveDat['taskData'] ).set_index('task_id')
-        if 'accumData' in saveDat:  
+        if 'accumData' in saveDat:
             self.accumData  = pd.DataFrame.from_dict(saveDat['accumData'] )
             if 'sql_id' in self.accumData.columns:
                 self.accumData = self.accumData.set_index('sql_id')
@@ -717,7 +744,7 @@ class sparkApplication():
         if self.existsSQL:
             self.sqlData      = pd.DataFrame.from_dict(saveDat['sqlData']).set_index('sql_id')
         if self.existsExecutors:
-            self.executorData = pd.DataFrame.from_dict(saveDat['executors']).set_index('executor_id')  
+            self.executorData = pd.DataFrame.from_dict(saveDat['executors']).set_index('executor_id')
 
         logging.info('Loaded object from: %s [%.2f]' % (filepath, (time.time()-t1)))
 

@@ -6,6 +6,7 @@ import numpy
 import os
 import boto3
 import gzip
+from pprint import pprint
 
 from .job_model import JobModel
 from .executor_model import ExecutorModel
@@ -51,6 +52,11 @@ class ApplicationModel:
 
         self.shuffle_partitions = 200
 
+
+        self.cloud_platform = None
+        self.cloud_provider = None
+        self.spark_version = None
+
         # if bucket is None, then files are in local directory, else read from s3
         # read event log
         if bucket is None:
@@ -95,8 +101,9 @@ class ApplicationModel:
                 json_data = get_json(line)
                 event_type = json_data["Event"]
                 if event_type == "SparkListenerLogStart":
-                    spark_version_dict = {"spark_version": json_data["Spark Version"]}
-                    self.spark_metadata = {**self.spark_metadata, **spark_version_dict}
+                    #spark_version_dict = {"spark_version": json_data["Spark Version"]}
+                    self.spark_version = json_data["Spark Version"]
+                    self.spark_metadata = {**self.spark_metadata}
                 elif event_type == "SparkListenerJobStart":
                    
                     job_id = json_data["Job ID"]
@@ -134,8 +141,9 @@ class ApplicationModel:
                 elif event_type == "SparkListenerStageCompleted":
                 
                     # stages may not be executed exclusively from one job
-                    self.finish_time = json_data['Stage Info']['Completion Time']/1000
                     stage_id = json_data['Stage Info']["Stage ID"]
+                    self.finish_time = json_data['Stage Info']['Completion Time']/1000
+
                     for job_id in self.jobs_for_stage[stage_id]:
                         self.jobs[job_id].stages[stage_id].completion_time = json_data['Stage Info']['Completion Time']/1000
 
@@ -146,8 +154,10 @@ class ApplicationModel:
 
                     # This if is specifically for databricks logs
                     if 'spark.databricks.clusterUsageTags.sparkVersion' in curKeys:
-                        json_data['Spark Properties']['platform'] = 'Databricks'
-                        json_data['Spark Properties']['spark_version'] = json_data['Spark Properties']['spark.databricks.clusterUsageTags.sparkVersion']
+
+                        self.cloud_platform = 'databricks'
+                        self.cloud_provider = json_data['Spark Properties']['spark.databricks.clusterUsageTags.cloudProvider'].lower()
+                        self.spark_version = json_data['Spark Properties']['spark.databricks.clusterUsageTags.sparkVersion']
 
                     self.spark_metadata = {**self.spark_metadata, **json_data["Spark Properties"]}
 
@@ -234,8 +244,11 @@ class ApplicationModel:
                 self.jobs[0].add_event(line, False)
 
 
-        if 'platform' not in self.spark_metadata.keys():
-            self.spark_metadata['platform'] = 'EMR'
+        if self.cloud_platform == None:
+            self.cloud_platform = 'emr'
+            self.cloud_provider = 'aws'
+            #self.spark_metadata['cloud_platform'] = 'emr'
+            #self.spark_metadata['cloud_provider'] = 'aws'
 
         self.dag.decipher_dag()
         self.dag.add_broadcast_dependencies(self.stdoutpath)
