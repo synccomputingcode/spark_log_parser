@@ -59,8 +59,12 @@ class ApplicationModel:
 
         # if bucket is None, then files are in local directory, else read from s3
         # read event log
+
+        # 2022-03-26 RW:  Consider centralizing file access for easier error handling
+
         if bucket is None:
 
+            # 2022-03-26  RW  Todo:  These file accesses will fail with invalid URL
             if '.gz' in eventlogpath:
                 f = gzip.open(eventlogpath, "rt")
             else:
@@ -73,6 +77,7 @@ class ApplicationModel:
             bucket = s3_resource.Bucket(bucket)
             key = eventlogpath
             obj = bucket.Object(key=key)
+            # 2022-03-26  RW  Todo:  This will fail with invalid URL
             response = obj.get()
 
             if '.gz' in key:
