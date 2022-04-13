@@ -60,7 +60,7 @@ class ApplicationModel:
         # if bucket is None, then files are in local directory, else read from s3
         # read event log
 
-        # 2022-03-26 RW:  Consider centralizing file access for easier error handling
+        # Todo:  2022-03-26 RW:  Consider centralizing file access for easier error handling
 
         if bucket is None:
 
