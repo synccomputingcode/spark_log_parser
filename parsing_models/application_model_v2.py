@@ -1,5 +1,5 @@
 
-from spark_predictor.log_parser.parsing_models.application_model import ApplicationModel
+from .application_model import ApplicationModel
 
 import time
 import os
