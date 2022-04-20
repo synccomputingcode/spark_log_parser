@@ -16,7 +16,7 @@ If you have not already done so, complete the [instructions](docs/event_log_down
 1. To process a log file, execute the parse.py script in the sync_parser folder, and provide a
 log file destination with the -d flag.
 
-    `python3 sync_parser/parse.py -d [log file location]`
+    `python3 spark_log_parser/parse.py -d [log file location]`
 
     The parsed file `parsed-[log file name]` will appear in the results directory.
 
