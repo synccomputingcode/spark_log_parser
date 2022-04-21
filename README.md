@@ -10,7 +10,7 @@ Clone this repo to the desired directory.
 
 # Getting Started
 ### Step 0: Generate the appropriate Apache Spark History Server Event log
-If you have not already done so, complete the [instructions](docs/event_log_download.pdf) to download the Apache Spark event log.
+If you have not already done so, complete the [instructions](https://github.com/synccomputingcode/user_documentation/wiki#accessing-autotuner-input-data) to download the Apache Spark event log.
 
 ### Step 1: Parse the log to strip away sensitive information
 1. To process a log file, execute the parse.py script in the sync_parser folder, and provide a
