@@ -1,5 +1,7 @@
 
 from .application_model import ApplicationModel
+from .validation_configs import ConfigValidationEMR, ConfigValidationDatabricks
+from .validation_event_data import EventDataValidation
 
 import time
 import os
@@ -18,6 +20,7 @@ class sparkApplication():
         appobj   = None, # application_model object
         eventlog = None, # spark eventlog path,
         stdout   = None,
+        debug = False,
         ):
             
         self.eventlog = eventlog
@@ -26,6 +29,7 @@ class sparkApplication():
         #self.sparkMetadata = {}
         self.metadata = {}
         self.stdout = stdout
+        self.debug = debug
 
         if objfile != None: # Load a previously saved sparkApplication Model
             self.load(filepath=objfile)
@@ -42,11 +46,13 @@ class sparkApplication():
                     path = eventlog
                     bucket = None
 
-                appobj = ApplicationModel(eventlogpath=path,bucket=bucket,stdoutpath=stdout)
+                appobj = ApplicationModel(eventlogpath=path,bucket=bucket,stdoutpath=stdout,debug=debug)
                 logging.info('Loaded object from spark eventlog [%.2fs]' % (time.time()-t0))
             else:
                 logging.info('Loaded object from ApplicationModel object')
-            
+                
+            self.validate_app(appobj, self.debug)
+
             # Get sql info if it exists
             if hasattr(appobj, 'sql') and appobj.sql:
                     self.getSQLinfo(appobj)
@@ -79,6 +85,17 @@ class sparkApplication():
             #self.crossReferenceData(appobj)
             logging.info('sparkApplication object creation complete')      
 
+    def validate_app(self,appobj, debug):
+
+        if appobj.cloud_platform == 'emr':
+            val1 = ConfigValidationEMR(app=appobj, debug=debug)
+        elif appobj.cloud_platform == 'databricks':
+            val1 = ConfigValidationDatabricks(app=appobj, debug=debug)
+        
+        val1.validate()
+
+        val2 = EventDataValidation(app=appobj, debug=debug)
+        val2.validate()
 
     def getRecentEvents(self):
 
@@ -231,6 +248,8 @@ class sparkApplication():
         sql_id         = []
         job_id         = []
         exec_id        = []
+        killed         = []
+        speculative    = []
         start_time     = []
         end_time       = []
         duration       = []
@@ -282,6 +301,8 @@ class sparkApplication():
                     job_id.append(jid)
                     task_id.append(task.task_id)
                     exec_id.append(int(task.executor_id))
+                    killed.append(task.killed)
+                    speculative.append(task.speculative)
                     start_time.append(task.start_time   - refTime)
                     end_time.append(task.finish_time - refTime)
                     duration.append(task.finish_time - task.start_time)
@@ -329,6 +350,8 @@ class sparkApplication():
             'job_id'        : job_id,
             'stage_id'      : stage_id,
             'executor_id'   : exec_id,
+            'killed'        : killed,
+            'speculative'   : speculative,
             'start_time'    : start_time, 
             'end_time'      : end_time,
             'duration'      : duration,

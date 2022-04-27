@@ -34,6 +34,8 @@ class TaskModel:
         self.finish_time = task_info["Finish Time"]/1000 # [s]
         self.task_id     = task_info['Task ID']
         self.executor = task_info["Host"]
+        self.killed     = task_info["Killed"]
+        self.speculative= task_info["Speculative"] # True if a duplicate task
         self.executor_run_time = task_metrics["Executor Run Time"]/1000 # [ms --> s]
         self.executor_cpu_time = task_metrics["Executor CPU Time"]/1000000000 # [ns --> s]
         self.executor_deserialize_time = task_metrics["Executor Deserialize Time"]/1000 # [ms --> s]

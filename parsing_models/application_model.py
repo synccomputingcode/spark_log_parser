@@ -11,6 +11,7 @@ from pprint import pprint
 from .job_model import JobModel
 from .executor_model import ExecutorModel
 from .dag_model import DagModel
+from .exceptions import UrgentEventValidationException
 
 def get_json(line): 
     # Need to first strip the trailing newline, and then escape newlines (which can appear
@@ -27,7 +28,7 @@ class ApplicationModel:
 
     """
 
-    def __init__(self, eventlogpath, bucket=None, stdoutpath=None):
+    def __init__(self, eventlogpath, bucket=None, stdoutpath=None, debug=False):
         # set default parameters
         self.eventlogpath = eventlogpath
         self.dag  = DagModel()
@@ -137,6 +138,10 @@ class ApplicationModel:
 
                     # stages may not be executed exclusively from one job
                     stage_id = json_data['Stage Info']["Stage ID"]
+
+                    if (stage_id not in self.jobs_for_stage) and (not debug):
+                        raise UrgentEventValidationException(missing_event=f'Job Start for Stage {stage_id}')
+
                     for job_id in self.jobs_for_stage[stage_id]:
                         self.jobs[job_id].stages[stage_id].submission_time = json_data['Stage Info']['Submission Time']/1000
                         self.jobs[job_id].stages[stage_id].stage_name = json_data['Stage Info']['Stage Name']
@@ -151,6 +156,10 @@ class ApplicationModel:
 
                     for job_id in self.jobs_for_stage[stage_id]:
                         self.jobs[job_id].stages[stage_id].completion_time = json_data['Stage Info']['Completion Time']/1000
+                        
+                    if not hasattr(self.jobs[job_id].stages[stage_id], 'submission_time') \
+                        and (not debug):
+                        raise UrgentEventValidationException(missing_event=f'Stage {stage_id} Submit')
 
 
                 elif event_type == "SparkListenerEnvironmentUpdate":
