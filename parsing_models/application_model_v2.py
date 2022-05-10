@@ -80,7 +80,6 @@ class sparkApplication():
 
             self.getAllDriverAccumData(appobj)
             self.getAllMetaData(appobj)
-            self.assignTasksToCores()
             self.getRecentEvents()
             #self.crossReferenceData(appobj)
             logging.info('sparkApplication object creation complete')      
@@ -606,49 +605,6 @@ class sparkApplication():
             logging.error('key and value must both be supplied.')
             
         self.metadata[key] = value
-    
-    def assignTasksToCores(self):
-        t1 = time.time()
-        
-        lastCoreID = 0
-        task_ids = []
-        core_ids = []
-        for xid in np.sort(self.taskData['executor_id'].unique()):
-            
-            
-            tasks = self.taskData.loc[self.taskData['executor_id'] == xid] # Get all tasks for this xid
-            tasks = tasks.sort_values(by='start_time') # Sort by start time
-            
-            
-            execCores = self.executorData.loc[xid]['cores']
-            coreIDs = np.arange(lastCoreID+1,lastCoreID+1+execCores)
-            lastCoreID += execCores
-            recentEndTimes = np.array([0.0]*execCores)
-
-            for tid, task in tasks.iterrows():
-                
-                # Find the earliest slot and place this task there
-                idx = np.argmin(recentEndTimes)
-                if task['start_time']>= recentEndTimes[idx]-0.005:
-                    task_ids.append(tid)
-                    core_ids.append(coreIDs[idx])
-                    recentEndTimes[idx] = task['end_time']
-                else:
-                    task_ids.append(tid)
-                    core_ids.append(-1)
-                                
-        df = pd.DataFrame({
-            'task_id': task_ids,
-            'core_id': core_ids
-        })
-        
-        df = df.sort_values(by='task_id')
-        df = df.set_index('task_id')
-        
-        logging.info('Assigning tasks to cores [%.2fs]' % (time.time()-t1))            
-
-        # Join by task_id (index column)
-        self.taskData = self.taskData.join(df)
         
     def getQueryData(self, sql_id=None):
         
