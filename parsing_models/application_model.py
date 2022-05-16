@@ -157,10 +157,21 @@ class ApplicationModel:
                     for job_id in self.jobs_for_stage[stage_id]:
                         self.jobs[job_id].stages[stage_id].completion_time = json_data['Stage Info']['Completion Time']/1000
                         
-                    if not hasattr(self.jobs[job_id].stages[stage_id], 'submission_time') \
-                        and (not debug):
-                        raise UrgentEventValidationException(missing_event=f'Stage {stage_id} Submit')
+                    # SPC-213 This fixes the case where a job submission occurs after a related
+                    # stage submission. This should only happen if a stage belongs to two jobs
+                    job_id_with_valid_stage = None
+                    for job_id in self.jobs_for_stage[stage_id]:
+                        if hasattr(self.jobs[job_id].stages[stage_id], 'submission_time'):
+                            job_id_with_valid_stage = job_id
+                            break
 
+                    # Make sure job-data for each job-id associated with this stage-id contains the
+                    # valid stage data
+                    for job_id in self.jobs_for_stage[stage_id]:
+                        self.jobs[job_id].stages[stage_id] = self.jobs[job_id_with_valid_stage].stages[stage_id]
+
+                    if (job_id_with_valid_stage is None) and (not debug):
+                        raise UrgentEventValidationException(missing_event=f'Stage {stage_id} Submit')
 
                 elif event_type == "SparkListenerEnvironmentUpdate":
 
