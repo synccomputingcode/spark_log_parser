@@ -1,5 +1,5 @@
 import collections
-import json
+import ujson as json
 import logging
 import numpy
 
