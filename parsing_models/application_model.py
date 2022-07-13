@@ -1,8 +1,6 @@
 import collections
 import gzip
-import logging
 import os
-from pprint import pprint
 
 import boto3
 import numpy
@@ -30,7 +28,7 @@ class ApplicationModel:
 
     """
 
-    def __init__(self, eventlogpath, bucket=None, stdoutpath=None, debug=False):
+    def __init__(self, eventlogpath, bucket=None, stdoutpath=None, debug=False):  # noqa: C901
         # set default parameters
         self.eventlogpath = eventlogpath
         self.dag = DagModel()
@@ -94,7 +92,7 @@ class ApplicationModel:
             get_json(test_line)
             is_json = True
             # print("Parsing file %s as JSON" % eventlogpath)
-        except:
+        except Exception:
             is_json = False
             print("Not json file. Check eventlog.")
 
@@ -305,7 +303,7 @@ class ApplicationModel:
                 # The file will only contain information for one job.
                 self.jobs[0].add_event(line, False)
 
-        if self.cloud_platform == None:
+        if not self.cloud_platform:
             self.cloud_platform = "emr"
             self.cloud_provider = "aws"
             # self.spark_metadata['cloud_platform'] = 'emr'
