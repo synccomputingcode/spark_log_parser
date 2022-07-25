@@ -1,8 +1,6 @@
 import logging
 
-logging.basicConfig(format="[%(asctime)s] %(levelname)s %(name)s: %(message)s", level=logging.WARN)
 logging.captureWarnings(True)
-logging.getLogger("py.warnings").setLevel(logging.CRITICAL)
 
 from spark_log_parser.parsing_models.application_model_v2 import sparkApplication
 
@@ -18,12 +16,12 @@ if __name__ == '__main__':
     parser.add_argument("-r", "--result-dir", required=True, help="path to directory in which to save parsed logs")
     args = parser.parse_args()  
 
-    print("\n" + "*" * 12 + "Running the Log Parser for Spark Predictor" + "*" * 12 + "\n")
+    print("\n" + "*" * 12 + " Running the Log Parser for Spark Predictor " + "*" * 12 + "\n")
 
     log_path = os.path.abspath(args.log_file)
 
     if not os.path.isdir(args.result_dir):
-        logging.error("%s is not a directory", args.result_dir)
+        logger.error("%s is not a directory", args.result_dir)
         sys.exit(1)
     
     print("\n--Processing log file: " + log_path)
