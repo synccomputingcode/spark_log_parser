@@ -10,11 +10,10 @@ import os
 import argparse
 import sys
 
-
 logger = logging.getLogger("spark_log_parser")
             
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser("spark_log_parser")
     parser.add_argument("-l", "--log-file", required=True, help="path to event log")
     parser.add_argument("-r", "--result-dir", required=True, help="path to directory in which to save parsed logs")
     args = parser.parse_args()  

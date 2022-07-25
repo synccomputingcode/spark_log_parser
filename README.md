@@ -6,7 +6,10 @@ sensitive information such as the data that your Apache Spark application is pro
 ![Output of Log Parser](docs/output.png)
 
 # Installation
-Clone this repo to the desired directory.
+Install the package in this repo to your Python 3 environment, e.g.
+```shell
+pip3 install https://github.com/synccomputingcode/spark_log_parser/archive/v0.0.1.tar.gz
+```
 
 # Parsing your Spark logs
 ### Step 0: Generate the appropriate Apache Spark History Server Event log
