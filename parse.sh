@@ -36,7 +36,7 @@ while getopts l:r:h name; do
 done
 
 if [[ -z $event_log ]]; then
-  >&2 echo "Event log file path is required"
+  >&2 echo "event log file path is required"
   >&2 print_usage
   exit 1
 fi
