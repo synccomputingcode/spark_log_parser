@@ -1,8 +1,7 @@
 # Spark Log Parser
-The **Parser for Apache Spark** parses unmodified Apache Spark History Server Event logs.
+The **Parser for Apache Spark** parses unmodified Spark history server event logs extracting information to a compact format that can more readily be applied to generating Sync predictions. See the [user guides](https://developers.synccomputing.com/docs/user-guide-emr) for information on where to find event logs. Related tools with their documentation may also be helpful: [client_tools](https://github.com/synccomputingcode/client_tools).
 
-Parsed logs contain metadata pertaining to your Apache Spark application execution. Particularly, the runtime for a task, the amount of data read & written, the amount of memory used, etc. These logs do not contain
-sensitive information such as the data that your Apache Spark application is processing. Below is an example of the output of the log parser.
+Parsed logs contain metadata pertaining to your Apache Spark application execution. Particularly, the run time for a task, the amount of data read & written, the amount of memory used, etc. These logs do not contain sensitive information such as the data that your Apache Spark application is processing. Below is an example of the output of the log parser.
 ![Output of Log Parser](docs/output.png)
 
 # Installation
