@@ -8,7 +8,7 @@ sensitive information such as the data that your Apache Spark application is pro
 # Installation
 Install the package in this repo to your Python 3 environment, e.g.
 ```shell
-pip3 install https://github.com/synccomputingcode/spark_log_parser/archive/v0.0.1.tar.gz
+pip3 install https://github.com/synccomputingcode/spark_log_parser/archive/main.tar.gz
 ```
 
 # Parsing your Spark logs
