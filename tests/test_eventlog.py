@@ -7,7 +7,7 @@ import tempfile
 def test_simple_databricks_log():
     event_log = Path("tests", "logs", "databricks.zip").resolve()
 
-    with tempfile.TemporaryDirectory(prefix="eventlog-%s-" % event_log.name[:-len("".join(event_log.suffixes))], dir="/tmp") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="eventlog-%s-" % event_log.name[:-len("".join(event_log.suffixes))]) as temp_dir:
         log = eventlog.EventLog(url=event_log.as_uri(), work_dir=temp_dir)
 
         with open(log.event_log) as log_fobj:
@@ -22,7 +22,7 @@ def test_simple_databricks_log():
 def test_simple_emr_log():
     event_log = Path("tests", "logs", "emr.zip").resolve()
 
-    with tempfile.TemporaryDirectory(prefix="eventlog-%s-" % event_log.name[:-len("".join(event_log.suffixes))], dir="/tmp") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="eventlog-%s-" % event_log.name[:-len("".join(event_log.suffixes))]) as temp_dir:
         log = eventlog.EventLog(url=event_log.as_uri(), work_dir=temp_dir)
 
         with open(log.event_log) as log_fobj:
