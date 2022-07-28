@@ -11,7 +11,7 @@ from pathlib import Path
 from pydantic import BaseModel, root_validator, stricturl
 
 
-AllowedURLs = stricturl(host_required=False, allowed_schemes={"https", "s3", "file"})
+AllowedURLs = stricturl(host_required=False, tld_required=False, allowed_schemes={"https", "s3", "file"})
 
 
 class EventLog(BaseModel):
@@ -53,7 +53,7 @@ class EventLogBuilder:
         if self.url.scheme in {"https", "s3"}:
             local_path.unlink()
 
-        self.event_log = self._concat(event_logs)
+        self.event_log = self._concat(event_logs, self.work_dir.joinpath(local_path.name[:-len("".join(local_path.suffixes))] + "-concatenated.json"))
 
         return self
 
@@ -81,14 +81,17 @@ class EventLogBuilder:
             return [event_log]
 
 
-    def _concat(self, event_logs: list[Path]):
+    def _concat(self, event_logs: list[Path], event_log: Path):
         if len(event_logs) == 1:
             return event_logs[0]
 
         dat = []
         for log in event_logs:
             with open(log) as log_file:
-                line = json.loads(log_file.readline())
+                try:
+                    line = json.loads(log_file.readline())
+                except ValueError:
+                    continue # Maybe a Databricks pricing file
                 if line['Event'] == "DBCEventLoggingListenerMetadata":
                     dat.append((line['Rollover Number'], line['SparkContext Id'], log))
 
@@ -100,7 +103,6 @@ class EventLogBuilder:
         if not len(df.context_id.unique() == 1):
             raise ValueError("Not all rollover files have the same Spark context ID")
 
-        event_log = self.work_dir.joinpath(self._basename() + "-concatenated.json")
         with open(event_log, "w") as fobj:
             for path in df.path:
                 with open(path) as part_fobj:
@@ -126,7 +128,7 @@ class EventLogBuilder:
 
                 extract_path = extract_dir.joinpath(tf.name)
                 extract_path.parent.mkdir(parents=True, exist_ok=True)
-                with tar_file.extract(tf.name) as source, open(extract_path, "wb") as target:
+                with tar_file.extractfile(tf.name) as source, open(extract_path, "wb") as target:
                     shutil.copyfileobj(source, target)
 
                 # Remove the archive if it was extracted to free up space
