@@ -24,8 +24,7 @@ class EventLog(BaseModel):
     source_url: AllowedURL
     work_dir: Path
     event_log: Path | None
-    file_total = 0
-    size_total = 0
+    is_parsed = False
 
     @root_validator()
     def validate_event_log(cls, values):
@@ -53,8 +52,8 @@ class EventLogBuilder:
 
         event_logs = self._extract_archive(local_path, self.work_dir)
 
-        # Remove the file if we downloaded it to free up space
-        if self.source_url.scheme in {"https", "s3"}:
+        # Remove the archive if we downloaded it to free up space
+        if local_path not in event_logs and self.source_url.scheme in {"https", "s3"}:
             local_path.unlink()
 
         self.event_log = self._concat(
@@ -63,6 +62,8 @@ class EventLogBuilder:
                 local_path.name[: -len("".join(local_path.suffixes))] + "-concatenated.json"
             ),
         )
+
+        self.is_parsed = self._is_parsed(self.event_log)
 
         return self
 
@@ -248,6 +249,11 @@ class EventLogBuilder:
                 s3.download_fileobj(self.source_url.host, self.source_url.path, fobj)
 
         return path
+
+    def _is_parsed(self, log_path: Path):
+        with open(log_path) as log:
+            entry = json.loads(log.readline())
+            return "jobData" in entry and "stageData" in entry and "taskData" in entry
 
     def _basename(self):
         if self.source_url.scheme in {"https", "s3"}:
