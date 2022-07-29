@@ -11,11 +11,11 @@ from pathlib import Path
 from pydantic import BaseModel, root_validator, stricturl
 
 
-AllowedURLs = stricturl(host_required=False, tld_required=False, allowed_schemes={"https", "s3", "file"})
+AllowedURL = stricturl(host_required=False, tld_required=False, allowed_schemes={"https", "s3", "file"})
 
 
 class EventLog(BaseModel):
-    url: AllowedURLs
+    source_url: AllowedURL
     work_dir: Path
     event_log: Path | None
     file_total = 0
@@ -26,12 +26,12 @@ class EventLog(BaseModel):
 
     @root_validator()
     def validate_event_log(cls, values):
-        return vars(EventLogBuilder(values['url'], values['work_dir'], values['file_limit'], values['size_limit'], values['compression_ratio_limit']).build())
+        return vars(EventLogBuilder(values['source_url'], values['work_dir'], values['file_limit'], values['size_limit'], values['compression_ratio_limit']).build())
 
 
 class EventLogBuilder:
-    def __init__(self, url, work_dir, file_limit, size_limit, compression_ratio_limit):
-        self.url = url
+    def __init__(self, source_url, work_dir, file_limit, size_limit, compression_ratio_limit):
+        self.source_url = source_url
         self.work_dir = work_dir
         self.file_total = 0
         self.size_total = 0
@@ -41,16 +41,16 @@ class EventLogBuilder:
 
 
     def build(self) -> "EventLogBuilder":
-        if self.url.scheme in {"https", "s3"}:
+        if self.source_url.scheme in {"https", "s3"}:
             local_path = self.work_dir.joinpath(self._basename())
             self._download(local_path)
         else:
-            local_path = Path(self.url.path)
+            local_path = Path(self.source_url.path)
 
         event_logs = self._extract_archive(local_path, self.work_dir)
 
-        # Remove the file we downloaded to free up space
-        if self.url.scheme in {"https", "s3"}:
+        # Remove the file if we downloaded it to free up space
+        if self.source_url.scheme in {"https", "s3"}:
             local_path.unlink()
 
         self.event_log = self._concat(event_logs, self.work_dir.joinpath(local_path.name[:-len("".join(local_path.suffixes))] + "-concatenated.json"))
@@ -59,26 +59,22 @@ class EventLogBuilder:
 
 
     def _extract_archive(self, event_log: Path, extract_dir: Path | None = None):
+        if not extract_dir:
+            extract_dir = event_log.parent
+
         extension = "".join(event_log.suffixes)
-        if self._is_supported_archive_extension(extension):
-            if not extract_dir:
-                extract_dir = event_log.parent
-
-            if extension.endswith(".tar.gz"):
-                return self._extract_tgz(event_log, extract_dir.joinpath(event_log.name[:-len(".tar.gz")]))
-            if extension.endswith(".tgz"):
-                return self._extract_tgz(event_log, extract_dir.joinpath(event_log.name[:-len(".tgz")]))
-            if extension.endswith(".zip"):
-                return self._extract_zip(event_log, extract_dir.joinpath(event_log.name[:-len(".zip")]))
-            if extension == ".gz":
-                return self._extract_gz(event_log, extract_dir.joinpath(event_log.name[:-len(".gz")]))
-            if extension in {".json", ".log", ""}:
-                return [event_log]
-
-            raise ValueError("Unsupported extension")
-
-        else:
+        if extension.endswith(".tar.gz"):
+            return self._extract_tgz(event_log, extract_dir.joinpath(event_log.name[:-len(".tar.gz")]))
+        if extension.endswith(".tgz"):
+            return self._extract_tgz(event_log, extract_dir.joinpath(event_log.name[:-len(".tgz")]))
+        if extension.endswith(".zip"):
+            return self._extract_zip(event_log, extract_dir.joinpath(event_log.name[:-len(".zip")]))
+        if extension.endswith(".gz"):
+            return self._extract_gz(event_log, extract_dir.joinpath(event_log.name[:-len(".gz")]))
+        if extension in {".json", ".log", ""}:
             return [event_log]
+
+        raise ValueError("Unsupported extension found in the archive")
 
 
     def _concat(self, event_logs: list[Path], event_log: Path):
@@ -94,14 +90,21 @@ class EventLogBuilder:
                     continue # Maybe a Databricks pricing file
                 if line['Event'] == "DBCEventLoggingListenerMetadata":
                     dat.append((line['Rollover Number'], line['SparkContext Id'], log))
+                else:
+                    raise ValueError("Expected DBC event not found")
 
         df = pd.DataFrame(dat, columns=["rollover_index", "context_id", "path"]).sort_values("rollover_index")
         
-        if not all(df.rollover_index.diff()[1:] == 1):
+        if not len(df.context_id.unique()) == 1:
+            raise ValueError("Not all rollover files have the same Spark context ID")
+
+        diffs = df.rollover_index.diff()[1:]
+
+        if any(diffs > 1):
             raise ValueError("Rollover file appears to be missing")
 
-        if not len(df.context_id.unique() == 1):
-            raise ValueError("Not all rollover files have the same Spark context ID")
+        if any(diffs < 1):
+            raise ValueError("Duplicate rollover file detected")
 
         with open(event_log, "w") as fobj:
             for path in df.path:
@@ -134,6 +137,8 @@ class EventLogBuilder:
                 # Remove the archive if it was extracted to free up space
                 sub_paths = self._extract_archive(extract_path)
                 if extract_path not in sub_paths:
+                    self.file_total -= 1
+                    self.size_total -= tf.size
                     extract_path.unlink()
 
                 paths += sub_paths
@@ -163,6 +168,8 @@ class EventLogBuilder:
                 # Remove the archive if it was extracted to free up space
                 sub_paths = self._extract_archive(extract_path)
                 if extract_path not in sub_paths:
+                    self.file_total -= 1
+                    self.size_total -= zinfo.file_size
                     extract_path.unlink()
 
                 paths += sub_paths
@@ -175,19 +182,21 @@ class EventLogBuilder:
             fobj.seek(-4, 2)
             size = struct.unpack("I", fobj.read(4))[0]
 
+        self.file_total += 1
         self.size_total += size
         self._safety_check(size)
 
         with gzip.open(archive_path, "rb") as source, open(extract_path, "wb") as target:
             shutil.copyfileobj(source, target)
 
-        return [extract_path]
+        # Remove the archive if it was extracted to free up space
+        sub_paths = self._extract_archive(extract_path)
+        if extract_path not in sub_paths:
+            self.file_total -= 1
+            self.size_total -= size
+            extract_path.unlink()
 
-
-    def _is_supported_archive_extension(self, extension: str):
-        if extension in {".tar.gz", ".tgz", ".gz", ".zip"}:
-            return True
-        return False
+        return sub_paths
 
 
     FILE_SKIP_PATTERNS = [
@@ -211,30 +220,30 @@ class EventLogBuilder:
     def _safety_check(self, size):
         ratio = size / self.size_total
         if ratio > self.compression_ratio_limit:
-            raise ValueError("Suspicious ratio size")
+            raise AssertionError("Encountered suspicious compression ratio in the archive")
 
         if self.size_total > self.size_limit:
-            raise ValueError("Arhive too big")
+            raise AssertionError("The archive is too big")
 
         if self.file_total > self.file_limit:
-            raise ValueError("Too many filesin archive")
+            raise AssertionError("Too many files in the archive")
 
 
     def _download(self, path):
         with open(path, 'wb') as fobj:
-            if self.url.scheme == "https":
-                response = requests.get(self.url, stream=True)
+            if self.source_url.scheme == "https":
+                response = requests.get(self.source_url, stream=True)
                 for chunk in response.iter_content():
                         fobj.write(chunk)
-            elif self.url.scheme == "s3":
+            elif self.source_url.scheme == "s3":
                 s3 = boto.client("s3")
-                s3.download_fileobj(self.url.host, self.url.path, fobj)
+                s3.download_fileobj(self.source_url.host, self.source_url.path, fobj)
 
         return path
 
 
     def _basename(self):
-        if self.url.scheme in {"https", "s3"}:
-            return self.url.path.split("/")[-1]
-        elif self.url.scheme == "file":
-            return Path(self.url.path).name
+        if self.source_url.scheme in {"https", "s3"}:
+            return self.source_url.path.split("/")[-1]
+        elif self.source_url.scheme == "file":
+            return Path(self.source_url.path).name

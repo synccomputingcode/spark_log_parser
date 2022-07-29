@@ -27,7 +27,7 @@ print("\n" + "*" * 12 + " Running the Log Parser for Spark Predictor " + "*" * 1
 print("--Processing log file: " + str(args.log_file))
 
 with tempfile.TemporaryDirectory() as work_dir:
-    event_log = EventLog(url=args.log_file.resolve().as_uri(), work_dir=work_dir)
+    event_log = EventLog(source_url=args.log_file.resolve().as_uri(), work_dir=work_dir)
     app = sparkApplication(eventlog=str(event_log.event_log))
 
 result_path = os.path.join(args.result_dir, "parsed-" + args.log_file.name[:-len("".join(args.log_file.suffixes))])
