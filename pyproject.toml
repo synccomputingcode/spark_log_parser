@@ -31,6 +31,9 @@ dynamic = ["version", "description"]
 [project.optional-dependencies]
 test = [
     "pytest==7.1.2",
+    "black==22.6.0",
+    "isort==5.10.1",
+    "flake8==4.0.1",
 ]
 
 [project.urls]
@@ -41,6 +44,7 @@ line-length = 100
 
 [tool.isort]
 profile = "black"
+line_length = 100
 
 [tool.pytest.ini_options]
 pythonpath = [

@@ -1,17 +1,19 @@
 import gzip
 import json
-import pandas as pd
 import shutil
 import struct
 import tarfile
 import zipfile
-import boto3 as boto
-import requests
 from pathlib import Path
+
+import boto3 as boto
+import pandas as pd
+import requests
 from pydantic import BaseModel, root_validator, stricturl
 
-
-AllowedURL = stricturl(host_required=False, tld_required=False, allowed_schemes={"https", "s3", "file"})
+AllowedURL = stricturl(
+    host_required=False, tld_required=False, allowed_schemes={"https", "s3", "file"}
+)
 
 
 class EventLog(BaseModel):
@@ -26,7 +28,15 @@ class EventLog(BaseModel):
 
     @root_validator()
     def validate_event_log(cls, values):
-        return vars(EventLogBuilder(values['source_url'], values['work_dir'], values['file_limit'], values['size_limit'], values['compression_ratio_limit']).build())
+        return vars(
+            EventLogBuilder(
+                values["source_url"],
+                values["work_dir"],
+                values["file_limit"],
+                values["size_limit"],
+                values["compression_ratio_limit"],
+            ).build()
+        )
 
 
 class EventLogBuilder:
@@ -38,7 +48,6 @@ class EventLogBuilder:
         self.file_limit = file_limit
         self.size_limit = size_limit
         self.compression_ratio_limit = compression_ratio_limit
-
 
     def build(self) -> "EventLogBuilder":
         if self.source_url.scheme in {"https", "s3"}:
@@ -53,10 +62,14 @@ class EventLogBuilder:
         if self.source_url.scheme in {"https", "s3"}:
             local_path.unlink()
 
-        self.event_log = self._concat(event_logs, self.work_dir.joinpath(local_path.name[:-len("".join(local_path.suffixes))] + "-concatenated.json"))
+        self.event_log = self._concat(
+            event_logs,
+            self.work_dir.joinpath(
+                local_path.name[: -len("".join(local_path.suffixes))] + "-concatenated.json"
+            ),
+        )
 
         return self
-
 
     def _extract_archive(self, event_log: Path, extract_dir: Path | None = None):
         if not extract_dir:
@@ -64,18 +77,23 @@ class EventLogBuilder:
 
         extension = "".join(event_log.suffixes)
         if extension.endswith(".tar.gz"):
-            return self._extract_tgz(event_log, extract_dir.joinpath(event_log.name[:-len(".tar.gz")]))
+            return self._extract_tgz(
+                event_log, extract_dir.joinpath(event_log.name[: -len(".tar.gz")])
+            )
         if extension.endswith(".tgz"):
-            return self._extract_tgz(event_log, extract_dir.joinpath(event_log.name[:-len(".tgz")]))
+            return self._extract_tgz(
+                event_log, extract_dir.joinpath(event_log.name[: -len(".tgz")])
+            )
         if extension.endswith(".zip"):
-            return self._extract_zip(event_log, extract_dir.joinpath(event_log.name[:-len(".zip")]))
+            return self._extract_zip(
+                event_log, extract_dir.joinpath(event_log.name[: -len(".zip")])
+            )
         if extension.endswith(".gz"):
-            return self._extract_gz(event_log, extract_dir.joinpath(event_log.name[:-len(".gz")]))
+            return self._extract_gz(event_log, extract_dir.joinpath(event_log.name[: -len(".gz")]))
         if extension in {".json", ".log", ""}:
             return [event_log]
 
         raise ValueError("Unsupported extension found in the archive")
-
 
     def _concat(self, event_logs: list[Path], event_log: Path):
         if len(event_logs) == 1:
@@ -87,14 +105,27 @@ class EventLogBuilder:
                 try:
                     line = json.loads(log_file.readline())
                 except ValueError:
-                    continue # Maybe a Databricks pricing file
-                if line['Event'] == "DBCEventLoggingListenerMetadata":
-                    dat.append((line['Rollover Number'], line['SparkContext Id'], log))
+                    continue  # Maybe a Databricks pricing file
+                if line["Event"] == "DBCEventLoggingListenerMetadata":
+                    dat.append((line["Rollover Number"], line["SparkContext Id"], log))
                 else:
                     raise ValueError("Expected DBC event not found")
 
-        df = pd.DataFrame(dat, columns=["rollover_index", "context_id", "path"]).sort_values("rollover_index")
-        
+        df = pd.DataFrame(dat, columns=["rollover_index", "context_id", "path"]).sort_values(
+            "rollover_index"
+        )
+
+        self._validate_rollover_logs(df)
+
+        with open(event_log, "w") as fobj:
+            for path in df.path:
+                with open(path) as part_fobj:
+                    for line in part_fobj:
+                        fobj.write(line)
+
+        return event_log
+
+    def _validate_rollover_logs(self, df: pd.DataFrame):
         if not len(df.context_id.unique()) == 1:
             raise ValueError("Not all rollover files have the same Spark context ID")
 
@@ -105,15 +136,6 @@ class EventLogBuilder:
 
         if any(diffs < 1):
             raise ValueError("Duplicate rollover file detected")
-
-        with open(event_log, "w") as fobj:
-            for path in df.path:
-                with open(path) as part_fobj:
-                    for line in part_fobj:
-                        fobj.write(line)
-
-        return event_log
-
 
     def _extract_tgz(self, archive_path: Path, extract_dir: Path):
         paths = []
@@ -145,7 +167,6 @@ class EventLogBuilder:
 
         return paths
 
-
     def _extract_zip(self, archive_path: Path, extract_dir: Path):
         paths = []
 
@@ -176,7 +197,6 @@ class EventLogBuilder:
 
         return paths
 
-
     def _extract_gz(self, archive_path: Path, extract_path: Path):
         with open(archive_path, "rb") as fobj:
             fobj.seek(-4, 2)
@@ -198,12 +218,7 @@ class EventLogBuilder:
 
         return sub_paths
 
-
-    FILE_SKIP_PATTERNS = [
-        ".DS_Store".lower(),
-        "__MACOSX".lower(),
-        "/."
-    ]
+    FILE_SKIP_PATTERNS = [".DS_Store".lower(), "__MACOSX".lower(), "/."]
 
     def _should_skip_file(self, filename: str):
         if filename.startswith("."):
@@ -216,7 +231,6 @@ class EventLogBuilder:
 
         return False
 
-
     def _safety_check(self, size):
         ratio = size / self.size_total
         if ratio > self.compression_ratio_limit:
@@ -228,19 +242,17 @@ class EventLogBuilder:
         if self.file_total > self.file_limit:
             raise AssertionError("Too many files in the archive")
 
-
     def _download(self, path):
-        with open(path, 'wb') as fobj:
+        with open(path, "wb") as fobj:
             if self.source_url.scheme == "https":
                 response = requests.get(self.source_url, stream=True)
                 for chunk in response.iter_content():
-                        fobj.write(chunk)
+                    fobj.write(chunk)
             elif self.source_url.scheme == "s3":
                 s3 = boto.client("s3")
                 s3.download_fileobj(self.source_url.host, self.source_url.path, fobj)
 
         return path
-
 
     def _basename(self):
         if self.source_url.scheme in {"https", "s3"}:
