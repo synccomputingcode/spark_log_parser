@@ -11,6 +11,10 @@ import pandas as pd
 import requests
 from pydantic import BaseModel, root_validator, stricturl
 
+THRESHOLD_ENTRIES = 100
+THRESHOLD_SIZE = 5000000000
+THRESHOLD_RATIO = 100
+
 AllowedURL = stricturl(
     host_required=False, tld_required=False, allowed_schemes={"https", "s3", "file"}
 )
@@ -22,9 +26,6 @@ class EventLog(BaseModel):
     event_log: Path | None
     file_total = 0
     size_total = 0
-    file_limit = 15
-    size_limit = 5000000000
-    compression_ratio_limit = 100
 
     @root_validator()
     def validate_event_log(cls, values):
@@ -32,22 +33,16 @@ class EventLog(BaseModel):
             EventLogBuilder(
                 values["source_url"],
                 values["work_dir"],
-                values["file_limit"],
-                values["size_limit"],
-                values["compression_ratio_limit"],
             ).build()
         )
 
 
 class EventLogBuilder:
-    def __init__(self, source_url, work_dir, file_limit, size_limit, compression_ratio_limit):
+    def __init__(self, source_url, work_dir):
         self.source_url = source_url
         self.work_dir = work_dir
         self.file_total = 0
         self.size_total = 0
-        self.file_limit = file_limit
-        self.size_limit = size_limit
-        self.compression_ratio_limit = compression_ratio_limit
 
     def build(self) -> "EventLogBuilder":
         if self.source_url.scheme in {"https", "s3"}:
@@ -233,13 +228,13 @@ class EventLogBuilder:
 
     def _safety_check(self, size):
         ratio = size / self.size_total
-        if ratio > self.compression_ratio_limit:
+        if ratio > THRESHOLD_RATIO:
             raise AssertionError("Encountered suspicious compression ratio in the archive")
 
-        if self.size_total > self.size_limit:
+        if self.size_total > THRESHOLD_SIZE:
             raise AssertionError("The archive is too big")
 
-        if self.file_total > self.file_limit:
+        if self.file_total > THRESHOLD_ENTRIES:
             raise AssertionError("Too many files in the archive")
 
     def _download(self, path):
