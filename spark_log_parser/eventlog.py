@@ -9,7 +9,7 @@ from pathlib import Path
 import boto3 as boto
 import pandas as pd
 import requests
-from pydantic import BaseModel, root_validator, stricturl
+from pydantic import BaseModel, ValidationError, root_validator, stricturl
 
 THRESHOLD_ENTRIES = 100
 THRESHOLD_SIZE = 5000000000
@@ -21,19 +21,24 @@ AllowedURL = stricturl(
 
 
 class EventLog(BaseModel):
-    source_url: AllowedURL
-    work_dir: Path
-    event_log: Path | None
+    source_url: AllowedURL = None
+    work_dir: Path = None
+    event_log: Path = None
     is_parsed = False
 
     @root_validator()
     def validate_event_log(cls, values):
-        return vars(
-            EventLogBuilder(
-                values["source_url"],
-                values["work_dir"],
-            ).build()
-        )
+        if not values["event_log"]:
+            if values["source_url"] and values["work_dir"]:
+                return vars(
+                    EventLogBuilder(
+                        values["source_url"],
+                        values["work_dir"],
+                    ).build()
+                )
+            raise ValidationError("source_url and work_dir must be set if event_log isn't")
+
+        return values
 
 
 class EventLogBuilder:
