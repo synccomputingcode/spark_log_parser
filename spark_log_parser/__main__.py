@@ -30,9 +30,13 @@ with tempfile.TemporaryDirectory() as work_dir:
     event_log = EventLog(source_url=args.log_file.resolve().as_uri(), work_dir=work_dir)
     app = sparkApplication(eventlog=str(event_log.event_log))
 
-result_path = os.path.join(
-    args.result_dir, "parsed-" + args.log_file.name[: -len("".join(args.log_file.suffixes))]
-)
+if args.log_file.suffixes:
+    result_path = os.path.join(
+        args.result_dir, "parsed-" + args.log_file.name[: -len("".join(args.log_file.suffixes))]
+    )
+else:
+    result_path = os.path.join(args.result_dir, "parsed-" + args.log_file.name)
+
 app.save(result_path)
 
 print(f"--Result saved to: {result_path}.json")

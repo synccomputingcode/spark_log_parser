@@ -1,19 +1,11 @@
-import gzip
 import json
-import shutil
-import struct
-import tarfile
-import zipfile
 from pathlib import Path
+from typing import Optional
 
-import boto3 as boto
 import pandas as pd
-import requests
 from pydantic import BaseModel, ValidationError, root_validator, stricturl
 
-THRESHOLD_ENTRIES = 100
-THRESHOLD_SIZE = 5000000000
-THRESHOLD_RATIO = 100
+from spark_log_parser.extractor import Extractor
 
 AllowedURL = stricturl(
     host_required=False, tld_required=False, allowed_schemes={"https", "s3", "file"}
@@ -21,10 +13,9 @@ AllowedURL = stricturl(
 
 
 class EventLog(BaseModel):
-    source_url: AllowedURL = None
-    work_dir: Path = None
-    event_log: Path = None
-    is_parsed = False
+    source_url: Optional[AllowedURL] = None
+    work_dir: Optional[Path] = None
+    event_log: Optional[Path] = None
 
     @root_validator()
     def validate_event_log(cls, values):
@@ -42,59 +33,25 @@ class EventLog(BaseModel):
 
 
 class EventLogBuilder:
-    def __init__(self, source_url, work_dir):
+    def __init__(self, source_url: AllowedURL, work_dir: Path):
         self.source_url = source_url
         self.work_dir = work_dir
         self.file_total = 0
         self.size_total = 0
 
     def build(self) -> "EventLogBuilder":
-        if self.source_url.scheme in {"https", "s3"}:
-            local_path = self.work_dir.joinpath(self._basename())
-            self._download(local_path)
-        else:
-            local_path = Path(self.source_url.path)
+        event_logs = Extractor(self.source_url, self.work_dir).extract()
 
-        event_logs = self._extract_archive(local_path, self.work_dir)
-
-        # Remove the archive if we downloaded it to free up space
-        if local_path not in event_logs and self.source_url.scheme in {"https", "s3"}:
-            local_path.unlink()
+        name = Path(self._basename())
 
         self.event_log = self._concat(
             event_logs,
             self.work_dir.joinpath(
-                local_path.name[: -len("".join(local_path.suffixes))] + "-concatenated.json"
+                name.name[: -len("".join(name.suffixes))] + "-concatenated.json"
             ),
         )
 
-        self.is_parsed = self._is_parsed(self.event_log)
-
         return self
-
-    def _extract_archive(self, event_log: Path, extract_dir: Path | None = None):
-        if not extract_dir:
-            extract_dir = event_log.parent
-
-        extension = "".join(event_log.suffixes)
-        if extension.endswith(".tar.gz"):
-            return self._extract_tgz(
-                event_log, extract_dir.joinpath(event_log.name[: -len(".tar.gz")])
-            )
-        if extension.endswith(".tgz"):
-            return self._extract_tgz(
-                event_log, extract_dir.joinpath(event_log.name[: -len(".tgz")])
-            )
-        if extension.endswith(".zip"):
-            return self._extract_zip(
-                event_log, extract_dir.joinpath(event_log.name[: -len(".zip")])
-            )
-        if extension.endswith(".gz"):
-            return self._extract_gz(event_log, extract_dir.joinpath(event_log.name[: -len(".gz")]))
-        if extension in {".json", ".log", ""}:
-            return [event_log]
-
-        raise ValueError("Unsupported extension found in the archive")
 
     def _concat(self, event_logs: list[Path], event_log: Path):
         if len(event_logs) == 1:
@@ -137,128 +94,6 @@ class EventLogBuilder:
 
         if any(diffs < 1):
             raise ValueError("Duplicate rollover file detected")
-
-    def _extract_tgz(self, archive_path: Path, extract_dir: Path):
-        paths = []
-
-        with tarfile.open(archive_path) as tar_file:
-            for tf in tar_file:
-                if self._should_skip_file(tf.name):
-                    continue
-                if tf.isdir():
-                    continue
-
-                self.file_total += 1
-                self.size_total += tf.size
-                self._safety_check(tf.size)
-
-                extract_path = extract_dir.joinpath(tf.name)
-                extract_path.parent.mkdir(parents=True, exist_ok=True)
-                with tar_file.extractfile(tf.name) as source, open(extract_path, "wb") as target:
-                    shutil.copyfileobj(source, target)
-
-                # Remove the archive if it was extracted to free up space
-                sub_paths = self._extract_archive(extract_path)
-                if extract_path not in sub_paths:
-                    self.file_total -= 1
-                    self.size_total -= tf.size
-                    extract_path.unlink()
-
-                paths += sub_paths
-
-        return paths
-
-    def _extract_zip(self, archive_path: Path, extract_dir: Path):
-        paths = []
-
-        with zipfile.ZipFile(archive_path) as zfile:
-            for zinfo in zfile.infolist():
-                if self._should_skip_file(zinfo.filename):
-                    continue
-                if zinfo.is_dir():
-                    continue
-
-                self.file_total += 1
-                self.size_total += zinfo.file_size
-                self._safety_check(zinfo.file_size)
-
-                extract_path = extract_dir.joinpath(zinfo.filename)
-                extract_path.parent.mkdir(parents=True, exist_ok=True)
-                with zfile.open(zinfo.filename) as source, open(extract_path, "wb") as target:
-                    shutil.copyfileobj(source, target)
-
-                # Remove the archive if it was extracted to free up space
-                sub_paths = self._extract_archive(extract_path)
-                if extract_path not in sub_paths:
-                    self.file_total -= 1
-                    self.size_total -= zinfo.file_size
-                    extract_path.unlink()
-
-                paths += sub_paths
-
-        return paths
-
-    def _extract_gz(self, archive_path: Path, extract_path: Path):
-        with open(archive_path, "rb") as fobj:
-            fobj.seek(-4, 2)
-            size = struct.unpack("I", fobj.read(4))[0]
-
-        self.file_total += 1
-        self.size_total += size
-        self._safety_check(size)
-
-        with gzip.open(archive_path, "rb") as source, open(extract_path, "wb") as target:
-            shutil.copyfileobj(source, target)
-
-        # Remove the archive if it was extracted to free up space
-        sub_paths = self._extract_archive(extract_path)
-        if extract_path not in sub_paths:
-            self.file_total -= 1
-            self.size_total -= size
-            extract_path.unlink()
-
-        return sub_paths
-
-    FILE_SKIP_PATTERNS = [".DS_Store".lower(), "__MACOSX".lower(), "/."]
-
-    def _should_skip_file(self, filename: str):
-        if filename.startswith("."):
-            return True
-
-        filename = filename.lower()
-        for name in EventLogBuilder.FILE_SKIP_PATTERNS:
-            if name in filename:
-                return True
-
-        return False
-
-    def _safety_check(self, size):
-        ratio = size / self.size_total
-        if ratio > THRESHOLD_RATIO:
-            raise AssertionError("Encountered suspicious compression ratio in the archive")
-
-        if self.size_total > THRESHOLD_SIZE:
-            raise AssertionError("The archive is too big")
-
-        if self.file_total > THRESHOLD_ENTRIES:
-            raise AssertionError("Too many files in the archive")
-
-    def _download(self, path):
-        with open(path, "wb") as fobj:
-            if self.source_url.scheme == "https":
-                response = requests.get(self.source_url, stream=True)
-                for chunk in response.iter_content():
-                    fobj.write(chunk)
-            elif self.source_url.scheme == "s3":
-                s3 = boto.client("s3")
-                s3.download_fileobj(self.source_url.host, self.source_url.path, fobj)
-
-        return path
-
-    def _is_parsed(self, log_path: Path):
-        with open(log_path) as log:
-            entry = json.loads(log.readline())
-            return "jobData" in entry and "stageData" in entry and "taskData" in entry
 
     def _basename(self):
         if self.source_url.scheme in {"https", "s3"}:
