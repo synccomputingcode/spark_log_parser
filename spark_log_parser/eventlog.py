@@ -9,8 +9,6 @@ from spark_log_parser.extractor import Extractor
 
 
 class EventLogBuilder:
-    ALLOWED_SCHEMES = {"https", "s3", "file"}
-
     def __init__(self, source_url: ParseResult | str, work_dir: Path | str, s3_client=None):
         self.source_url = source_url
         self.work_dir = self._validate_work_dir(work_dir)
