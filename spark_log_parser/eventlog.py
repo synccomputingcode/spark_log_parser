@@ -1,7 +1,7 @@
 import json
 import tempfile
 from pathlib import Path
-from urllib.parse import ParseResult, urlparse
+from urllib.parse import ParseResult
 
 import pandas as pd
 
@@ -12,21 +12,10 @@ class EventLogBuilder:
     ALLOWED_SCHEMES = {"https", "s3", "file"}
 
     def __init__(self, source_url: ParseResult | str, work_dir: Path | str, s3_client=None):
-        self.source_url = self._validate_url(source_url)
+        self.source_url = source_url
         self.work_dir = self._validate_work_dir(work_dir)
         self.s3_client = s3_client
-        self.file_total = 0
-        self.size_total = 0
-
-    def _validate_url(self, url: ParseResult | str) -> ParseResult:
-        parsed_url = url if isinstance(url, ParseResult) else urlparse(url)
-        if parsed_url.scheme not in self.ALLOWED_SCHEMES:
-            raise ValueError(
-                "URL scheme '%s' is not one of {'%s'}"
-                % (parsed_url.scheme, "', '".join(self.ALLOWED_SCHEMES))
-            )
-
-        return parsed_url
+        self.extractor = Extractor(self.source_url, self.work_dir, self.s3_client)
 
     def _validate_work_dir(self, work_dir: Path | str) -> Path:
         work_dir_path = work_dir if isinstance(work_dir, Path) else Path(work_dir)
@@ -36,16 +25,13 @@ class EventLogBuilder:
         return work_dir_path
 
     def build(self) -> Path:
-        event_logs = Extractor(self.source_url, self.work_dir, self.s3_client).extract()
+        event_logs = self.extractor.extract()
 
-        self.event_log = self._concat(
-            event_logs,
-            Path(tempfile.mkstemp(suffix="-concatenated.json", dir=str(self.work_dir))[1]),
-        )
+        self.event_log = self._concat(event_logs)
 
         return self.event_log
 
-    def _concat(self, event_logs: list[Path], event_log: Path) -> Path:
+    def _concat(self, event_logs: list[Path]) -> Path:
         if len(event_logs) == 1:
             return event_logs[0]
 
@@ -67,6 +53,7 @@ class EventLogBuilder:
 
         self._validate_rollover_logs(df)
 
+        event_log = Path(tempfile.mkstemp(suffix="-concatenated.json", dir=str(self.work_dir))[1])
         with open(event_log, "w") as fobj:
             for path in df.path:
                 with open(path) as part_fobj:
