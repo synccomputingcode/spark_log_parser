@@ -1,7 +1,7 @@
 import json
 import tempfile
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, urlparse
 
 import pandas as pd
 
@@ -11,15 +11,15 @@ from spark_log_parser.extractor import Extractor
 class EventLogBuilder:
     ALLOWED_SCHEMES = {"https", "s3", "file"}
 
-    def __init__(self, source_url: str, work_dir: Path | str, s3_client=None):
+    def __init__(self, source_url: ParseResult | str, work_dir: Path | str, s3_client=None):
         self.source_url = self._validate_url(source_url)
         self.work_dir = self._validate_work_dir(work_dir)
         self.s3_client = s3_client
         self.file_total = 0
         self.size_total = 0
 
-    def _validate_url(self, url: str):
-        parsed_url = urlparse(url)
+    def _validate_url(self, url: ParseResult | str) -> ParseResult:
+        parsed_url = url if isinstance(url, ParseResult) else urlparse(url)
         if parsed_url.scheme not in self.ALLOWED_SCHEMES:
             raise ValueError(
                 "URL scheme '%s' is not one of {'%s'}"
@@ -28,17 +28,15 @@ class EventLogBuilder:
 
         return parsed_url
 
-    def _validate_work_dir(self, work_dir: Path):
+    def _validate_work_dir(self, work_dir: Path | str) -> Path:
         work_dir_path = work_dir if isinstance(work_dir, Path) else Path(work_dir)
         if not work_dir_path.is_dir():
             raise ValueError("Path is not a directory")
 
         return work_dir_path
 
-    def build(self) -> "EventLogBuilder":
+    def build(self) -> Path:
         event_logs = Extractor(self.source_url, self.work_dir, self.s3_client).extract()
-
-        # name = Path(self._basename())
 
         self.event_log = self._concat(
             event_logs,
@@ -88,9 +86,3 @@ class EventLogBuilder:
 
         if any(diffs < 1):
             raise ValueError("Duplicate rollover file detected")
-
-    def _basename(self):
-        if self.source_url.scheme in {"https", "s3"}:
-            return self.source_url.path.split("/")[-1]
-        elif self.source_url.scheme == "file":
-            return Path(self.source_url.path).name

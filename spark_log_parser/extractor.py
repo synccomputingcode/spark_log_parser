@@ -29,7 +29,7 @@ class Extractor:
         self.file_total = 0
         self.size_total = 0
 
-    def _validate_url(self, url: ParseResult | str):
+    def _validate_url(self, url: ParseResult | str) -> ParseResult:
         parsed_url = url if isinstance(url, ParseResult) else urlparse(url)
         if parsed_url.scheme not in self.ALLOWED_SCHEMES:
             raise ValueError(
@@ -39,7 +39,7 @@ class Extractor:
 
         return parsed_url
 
-    def _validate_work_dir(self, work_dir: Path | str):
+    def _validate_work_dir(self, work_dir: Path | str) -> Path:
         work_dir_path = work_dir if isinstance(work_dir, Path) else Path(work_dir)
         if not work_dir_path.is_dir():
             raise ValueError("Path is not a directory")
@@ -115,7 +115,7 @@ class Extractor:
 
         return paths
 
-    def _extract_tgz(self, archive_path: Path, extract_dir: Path):
+    def _extract_tgz(self, archive_path: Path, extract_dir: Path) -> list[Path]:
         paths = []
 
         with tarfile.open(archive_path) as tar_file:
@@ -142,7 +142,7 @@ class Extractor:
 
         return paths
 
-    def _extract_zip(self, archive_path: Path, extract_dir: Path):
+    def _extract_zip(self, archive_path: Path, extract_dir: Path) -> list[Path]:
         paths = []
 
         with zipfile.ZipFile(archive_path) as zfile:
@@ -169,7 +169,7 @@ class Extractor:
 
         return paths
 
-    def _extract_gz(self, archive_path: Path, extract_path: Path):
+    def _extract_gz(self, archive_path: Path, extract_path: Path) -> list[Path]:
         with open(archive_path, "rb") as fobj:
             fobj.seek(-4, 2)
             size = struct.unpack("I", fobj.read(4))[0]
@@ -188,7 +188,7 @@ class Extractor:
 
         return sub_paths
 
-    def _should_skip_file(self, filename: str):
+    def _should_skip_file(self, filename: str) -> bool:
         if filename.startswith("."):
             return True
 
