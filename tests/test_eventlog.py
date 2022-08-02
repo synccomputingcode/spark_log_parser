@@ -8,14 +8,14 @@ from spark_log_parser import eventlog
 
 
 def test_simple_emr_log():
-    event_log = Path("tests", "logs", "emr.zip").resolve()
+    event_log_path = Path("tests", "logs", "emr.zip").resolve()
 
-    with tempfile.TemporaryDirectory(
-        prefix="eventlog-%s-" % event_log.name[: -len("".join(event_log.suffixes))]
-    ) as temp_dir:
-        log = eventlog.EventLog(source_url=event_log.as_uri(), work_dir=temp_dir)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        event_log = eventlog.EventLogBuilder(
+            source_url=event_log_path.as_uri(), work_dir=temp_dir
+        ).build()
 
-        with open(log.event_log) as log_fobj:
+        with open(event_log) as log_fobj:
             event = json.loads(log_fobj.readline())
 
     assert all(key in event for key in ["Event", "Spark Version"]), "All keys are present"
@@ -24,14 +24,12 @@ def test_simple_emr_log():
 
 
 def test_simple_databricks_log():
-    event_log = Path("tests", "logs", "databricks.zip").resolve()
+    event_log_path = Path("tests", "logs", "databricks.zip").resolve()
 
-    with tempfile.TemporaryDirectory(
-        prefix="eventlog-%s-" % event_log.name[: -len("".join(event_log.suffixes))]
-    ) as temp_dir:
-        log = eventlog.EventLog(source_url=event_log.as_uri(), work_dir=temp_dir)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        event_log = eventlog.EventLogBuilder(event_log_path.as_uri(), temp_dir).build()
 
-        with open(log.event_log) as log_fobj:
+        with open(event_log) as log_fobj:
             event = json.loads(log_fobj.readline())
 
     assert all(
@@ -41,14 +39,12 @@ def test_simple_databricks_log():
 
 
 def test_raw_databricks_log():
-    event_log = Path("tests", "logs", "databricks.json").resolve()
+    event_log_path = Path("tests", "logs", "databricks.json").resolve()
 
-    with tempfile.TemporaryDirectory(
-        prefix="eventlog-%s-" % event_log.name[: -len("".join(event_log.suffixes))]
-    ) as temp_dir:
-        log = eventlog.EventLog(source_url=event_log.as_uri(), work_dir=temp_dir)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        event_log = eventlog.EventLogBuilder(event_log_path.as_uri(), temp_dir).build()
 
-        with open(log.event_log) as log_fobj:
+        with open(event_log) as log_fobj:
             event = json.loads(log_fobj.readline())
 
     assert all(
@@ -56,7 +52,6 @@ def test_raw_databricks_log():
         for key in ["Event", "Spark Version", "Timestamp", "Rollover Number", "SparkContext Id"]
     ), "All keys are present"
 
-    assert event["Event"] == "DBCEventLoggingListenerMetadata", "Expected first event is present"
     assert event["Event"] == "DBCEventLoggingListenerMetadata", "Expected first event is present"
 
 
@@ -71,16 +66,16 @@ class RolloverLog(unittest.TestCase):
 
     def test_databricks_messy_rollover_log_dir(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            with zipfile.ZipFile(Path("tests", "logs", "databricks-rollover-messy.zip")) as zinfo:
+            with zipfile.ZipFile(Path("tests", "logs", "databricks-rollover-messy.zip")) as zfile:
                 temp_dir_path = Path(temp_dir)
-                zinfo.extractall(temp_dir_path)
+                zfile.extractall(temp_dir_path)
                 self.validate_log(temp_dir_path, 3, 16945)
 
     def validate_log(self, event_log: Path, log_file_total: int, log_entry_total: int):
         with tempfile.TemporaryDirectory() as temp_dir:
-            log = eventlog.EventLog(source_url=event_log.as_uri(), work_dir=temp_dir)
+            event_log = eventlog.EventLogBuilder(event_log.as_uri(), temp_dir).build()
 
-            with open(log.event_log) as log_fobj:
+            with open(event_log) as log_fobj:
                 event = json.loads(log_fobj.readline())
                 log_fobj.seek(0)
 

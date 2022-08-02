@@ -13,13 +13,11 @@ function print_usage() {
 }
 
 results_dir="$HOME/results"
-args=()
 
 while getopts l:r:h name; do
   case $name in
     l)
       event_log="$OPTARG"
-      args=("${args[@]}" -l "$OPTARG")
       ;;
     r)
       results_dir="$OPTARG"
@@ -41,6 +39,4 @@ if [[ -z $event_log ]]; then
   exit 1
 fi
 
-args=("${args[@]}" -r "$results_dir")
-
-exec python3 -m spark_log_parser "${args[@]}"
+exec python3 -m spark_log_parser -l "$event_log" -r "$results_dir"

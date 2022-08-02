@@ -1,59 +1,53 @@
 import json
+import tempfile
 from pathlib import Path
-from typing import Optional
+from urllib.parse import urlparse
 
 import pandas as pd
-from pydantic import BaseModel, ValidationError, root_validator, stricturl
 
 from spark_log_parser.extractor import Extractor
 
-AllowedURL = stricturl(
-    host_required=False, tld_required=False, allowed_schemes={"https", "s3", "file"}
-)
-
-
-class EventLog(BaseModel):
-    source_url: Optional[AllowedURL] = None
-    work_dir: Optional[Path] = None
-    event_log: Optional[Path] = None
-
-    @root_validator()
-    def validate_event_log(cls, values):
-        if not values["event_log"]:
-            if values["source_url"] and values["work_dir"]:
-                return vars(
-                    EventLogBuilder(
-                        values["source_url"],
-                        values["work_dir"],
-                    ).build()
-                )
-            raise ValidationError("source_url and work_dir must be set if event_log isn't")
-
-        return values
-
 
 class EventLogBuilder:
-    def __init__(self, source_url: AllowedURL, work_dir: Path):
-        self.source_url = source_url
-        self.work_dir = work_dir
+    ALLOWED_SCHEMES = {"https", "s3", "file"}
+
+    def __init__(self, source_url: str, work_dir: Path | str, s3_client=None):
+        self.source_url = self._validate_url(source_url)
+        self.work_dir = self._validate_work_dir(work_dir)
+        self.s3_client = s3_client
         self.file_total = 0
         self.size_total = 0
 
-    def build(self) -> "EventLogBuilder":
-        event_logs = Extractor(self.source_url, self.work_dir).extract()
+    def _validate_url(self, url: str):
+        parsed_url = urlparse(url)
+        if parsed_url.scheme not in self.ALLOWED_SCHEMES:
+            raise ValueError(
+                "URL scheme '%s' is not one of {'%s'}"
+                % (parsed_url.scheme, "', '".join(self.ALLOWED_SCHEMES))
+            )
 
-        name = Path(self._basename())
+        return parsed_url
+
+    def _validate_work_dir(self, work_dir: Path):
+        work_dir_path = work_dir if isinstance(work_dir, Path) else Path(work_dir)
+        if not work_dir_path.is_dir():
+            raise ValueError("Path is not a directory")
+
+        return work_dir_path
+
+    def build(self) -> "EventLogBuilder":
+        event_logs = Extractor(self.source_url, self.work_dir, self.s3_client).extract()
+
+        # name = Path(self._basename())
 
         self.event_log = self._concat(
             event_logs,
-            self.work_dir.joinpath(
-                name.name[: -len("".join(name.suffixes))] + "-concatenated.json"
-            ),
+            Path(tempfile.mkstemp(suffix="-concatenated.json", dir=str(self.work_dir))[1]),
         )
 
-        return self
+        return self.event_log
 
-    def _concat(self, event_logs: list[Path], event_log: Path):
+    def _concat(self, event_logs: list[Path], event_log: Path) -> Path:
         if len(event_logs) == 1:
             return event_logs[0]
 

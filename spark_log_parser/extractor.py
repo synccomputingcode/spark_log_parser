@@ -1,18 +1,13 @@
-import os
-import boto3 as boto
 import gzip
-from pathlib import Path
+import os
 import shutil
 import struct
 import tarfile
 import zipfile
+from pathlib import Path
+from urllib.parse import ParseResult, urlparse
 
 import requests
-
-
-THRESHOLD_ENTRIES = 100
-THRESHOLD_SIZE = 5000000000
-THRESHOLD_RATIO = 100
 
 
 class Extractor:
@@ -20,34 +15,61 @@ class Extractor:
     Expands archive to a "work" directory and provides a list of extracted files
     """
 
-    def __init__(self, source_url, work_dir):
-        self.source_url = source_url
-        self.work_dir = work_dir
+    ALLOWED_SCHEMES = {"https", "s3", "file"}
+    FILE_SKIP_PATTERNS = [".DS_Store".lower(), "__MACOSX".lower(), "/."]
+
+    THRESHOLD_ENTRIES = 100
+    THRESHOLD_SIZE = 5000000000
+    THRESHOLD_RATIO = 100
+
+    def __init__(self, source_url: ParseResult | str, work_dir: Path | str, s3_client=None):
+        self.source_url = self._validate_url(source_url)
+        self.work_dir = self._validate_work_dir(work_dir)
+        self.s3_client = self._validate_s3_client(s3_client)
         self.file_total = 0
         self.size_total = 0
 
+    def _validate_url(self, url: ParseResult | str):
+        parsed_url = url if isinstance(url, ParseResult) else urlparse(url)
+        if parsed_url.scheme not in self.ALLOWED_SCHEMES:
+            raise ValueError(
+                "URL scheme '%s' is not one of {'%s'}"
+                % (parsed_url.scheme, "', '".join(self.ALLOWED_SCHEMES))
+            )
+
+        return parsed_url
+
+    def _validate_work_dir(self, work_dir: Path | str):
+        work_dir_path = work_dir if isinstance(work_dir, Path) else Path(work_dir)
+        if not work_dir_path.is_dir():
+            raise ValueError("Path is not a directory")
+
+        return work_dir_path
+
+    def _validate_s3_client(self, s3_client):
+        if self.source_url.scheme == "s3" and s3_client is None:
+            raise ValueError("An S3 client is needed for S3 URLs")
+
+        return s3_client
+
     def extract(self) -> list[Path]:
         if self.source_url.scheme in {"https", "s3"}:
-            local_path = self.work_dir.joinpath(self.source_url.path.split("/")[-1])
-            self._download(local_path)
+            self._download()
+            local_path = self.work_dir
         else:
             local_path = Path(self.source_url.path)
 
-        files = self._extract(local_path, self.work_dir)
+        result_files = self._extract(local_path, self.work_dir)
 
-        # Remove the archive if we downloaded it to free up space
-        if local_path not in files and self.source_url.scheme in {"https", "s3"}:
-            local_path.unlink()
-
-        return files
+        return result_files
 
     def _extract(self, event_log: Path, extract_dir: Path | None = None) -> list[Path]:
-        """ returns list of uncompressed files"""
+        """returns list of uncompressed files"""
         if not extract_dir:
             extract_dir = event_log.parent
 
         if event_log.is_dir():
-            return self._extract_dir(event_log, extract_dir.joinpath(event_log.name))
+            return self._extract_dir(event_log, extract_dir)
 
         extension = "".join(event_log.suffixes)
         if extension.endswith(".tar.gz"):
@@ -69,30 +91,29 @@ class Extractor:
 
         raise ValueError("Unsupported extension found in the archive")
 
-
     def _extract_dir(self, log_dir: Path, extract_dir: Path) -> list[Path]:
         paths = []
 
-        source_root = Path(self.source_url.path)
-
         for root, _, files in os.walk(log_dir):
             for file in files:
-                if self._should_skip_file(file):
-                    continue
-
                 path = Path(root, file)
+                if self._should_skip_file(file):
+                    if path.is_relative_to(self.work_dir):
+                        path.unlink()
+                    continue
 
                 self._add_to_stats_and_verify(path.stat().st_size)
 
-                # Remove the archive if it was extracted to free up space
-                sub_paths = self._extract(path, Path(extract_dir, path.parent.relative_to(source_root)))
+                sub_paths = self._extract(path, Path(extract_dir, path.parent.relative_to(log_dir)))
                 if path not in sub_paths:
                     self._remove_from_stats(path.stat().st_size)
+                    # Remove the archive if it was extracted to free up space
+                    if path.is_relative_to(self.work_dir):
+                        path.unlink()
 
                 paths += sub_paths
 
         return paths
-
 
     def _extract_tgz(self, archive_path: Path, extract_dir: Path):
         paths = []
@@ -167,14 +188,12 @@ class Extractor:
 
         return sub_paths
 
-    FILE_SKIP_PATTERNS = [".DS_Store".lower(), "__MACOSX".lower(), "/."]
-
     def _should_skip_file(self, filename: str):
         if filename.startswith("."):
             return True
 
         filename = filename.lower()
-        for name in Extractor.FILE_SKIP_PATTERNS:
+        for name in self.FILE_SKIP_PATTERNS:
             if name in filename:
                 return True
 
@@ -185,29 +204,47 @@ class Extractor:
         self.file_total += count
 
         ratio = size / self.size_total
-        if ratio > THRESHOLD_RATIO:
+        if ratio > self.THRESHOLD_RATIO:
             raise AssertionError("Encountered suspicious compression ratio in the archive")
 
-        if self.size_total > THRESHOLD_SIZE:
+        if self.size_total > self.THRESHOLD_SIZE:
             raise AssertionError("The archive is too big")
 
-        if self.file_total > THRESHOLD_ENTRIES:
+        if self.file_total > self.THRESHOLD_ENTRIES:
             raise AssertionError("Too many files in the archive")
-
 
     def _remove_from_stats(self, size, count=1):
         self.size_total -= size
         self.file_total -= count
 
-
-    def _download(self, path):
-        with open(path, "wb") as fobj:
-            if self.source_url.scheme == "https":
-                response = requests.get(self.source_url, stream=True)
+    def _download(self):
+        if self.source_url.scheme == "https":
+            response = requests.get(self.source_url, stream=True)
+            target_path = self.work_dir.joinpath(self.source_url.path.split("/")[-1])
+            with open(target_path, "wb") as fobj:
                 for chunk in response.iter_content():
                     fobj.write(chunk)
-            elif self.source_url.scheme == "s3":
-                s3 = boto.client("s3")
-                s3.download_fileobj(self.source_url.host, self.source_url.path, fobj)
+        elif self.source_url.scheme == "s3":
+            source_key = self.source_url.path.lstrip("/")
+            source_bucket = self.source_url.netloc
 
-        return path
+            s3_content_count = 0
+            s3_content_size = 0
+            result = self.s3_client.list_objects_v2(Bucket=source_bucket, Prefix=source_key)
+            if "Contents" in result:
+                relative_index = source_key.rfind("/") + 1
+                for content in result["Contents"]:
+                    s3_content_count += 1
+                    s3_content_size += content["Size"]
+                    if s3_content_count > self.THRESHOLD_ENTRIES:
+                        raise AssertionError("Too many objects at %s" % self.source_url)
+                    if s3_content_size > self.THRESHOLD_SIZE:
+                        raise AssertionError(
+                            "Size limit exceeded while downloading from %s" % self.source_url
+                        )
+
+                    target_path = self.work_dir.joinpath(
+                        *content["Key"][relative_index:].split("/")
+                    )
+                    target_path.parent.mkdir(parents=True, exist_ok=True)
+                    self.s3_client.download_file(source_bucket, content["Key"], str(target_path))

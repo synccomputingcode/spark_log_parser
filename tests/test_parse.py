@@ -7,15 +7,13 @@ from spark_log_parser.parsing_models.application_model_v2 import sparkApplicatio
 
 
 def test_simple_databricks_log():
-    event_log = Path("tests", "logs", "databricks.zip").resolve()
+    event_log_path = Path("tests", "logs", "databricks.zip").resolve()
 
-    with tempfile.TemporaryDirectory(
-        prefix="eventlog-%s-" % event_log.name[: -len("".join(event_log.suffixes))]
-    ) as temp_dir:
-        log = eventlog.EventLog(source_url=event_log.as_uri(), work_dir=temp_dir)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        event_log = eventlog.EventLogBuilder(event_log_path.as_uri(), temp_dir).build()
 
         result_path = str(Path(temp_dir, "result"))
-        sparkApplication(eventlog=str(log.event_log)).save(result_path)
+        sparkApplication(eventlog=str(event_log)).save(result_path)
 
         with open(result_path + ".json") as result_fobj:
             parsed = json.load(result_fobj)
@@ -39,15 +37,13 @@ def test_simple_databricks_log():
 
 
 def test_simple_emr_log():
-    event_log = Path("tests", "logs", "emr.zip").resolve()
+    event_log_path = Path("tests", "logs", "emr.zip").resolve()
 
-    with tempfile.TemporaryDirectory(
-        prefix="eventlog-%s-" % event_log.name[: -len("".join(event_log.suffixes))]
-    ) as temp_dir:
-        log = eventlog.EventLog(source_url=event_log.as_uri(), work_dir=temp_dir)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        event_log = eventlog.EventLogBuilder(event_log_path.as_uri(), temp_dir).build()
 
         result_path = str(Path(temp_dir, "result"))
-        sparkApplication(eventlog=str(log.event_log)).save(result_path)
+        sparkApplication(eventlog=str(event_log)).save(result_path)
 
         with open(str(result_path) + ".json") as result_fobj:
             parsed = json.load(result_fobj)
