@@ -81,7 +81,7 @@ class EventLogBuilder:
 
         diffs = df.rollover_index.diff()[1:]
 
-        if any(diffs > 1):
+        if any(diffs > 1) or df.rollover_index[0] > 0:
             raise ValueError("Rollover file appears to be missing")
 
         if any(diffs < 1):

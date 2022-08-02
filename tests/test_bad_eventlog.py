@@ -35,3 +35,10 @@ class BadEventLog(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             with self.assertRaises(ValueError, msg="Rollover file appears to be missing"):
                 EventLogBuilder(event_log.as_uri(), temp_dir).build()
+
+    def test_missing_first_part(self):
+        event_log = Path("tests", "logs", "bad", "missing-first-part.zip").resolve()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaises(ValueError, msg="Rollover file appears to be missing"):
+                EventLogBuilder(event_log.as_uri(), temp_dir).build()
