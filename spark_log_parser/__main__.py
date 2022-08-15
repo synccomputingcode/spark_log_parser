@@ -4,6 +4,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import spark_log_parser
+
 logging.captureWarnings(True)
 
 from spark_log_parser.eventlog import EventLogBuilder  # noqa: E402
@@ -22,6 +24,9 @@ parser.add_argument(
     required=True,
     type=Path,
     help="path to directory in which to save the parsed log",
+)
+parser.add_argument(
+    "--version", action="version", version="%(prog)s " + spark_log_parser.__version__
 )
 args = parser.parse_args()
 

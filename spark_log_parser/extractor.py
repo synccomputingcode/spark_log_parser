@@ -8,6 +8,13 @@ from pathlib import Path
 from urllib.parse import ParseResult, urlparse
 
 import requests
+from pydantic import BaseModel
+
+
+class ExtractThresholds(BaseModel):
+    entries = 100
+    size = 5000000000
+    ratio = 100
 
 
 class Extractor:
@@ -18,16 +25,20 @@ class Extractor:
     ALLOWED_SCHEMES = {"https", "s3", "file"}
     FILE_SKIP_PATTERNS = [".DS_Store".lower(), "__MACOSX".lower(), "/."]
 
-    THRESHOLD_ENTRIES = 100
-    THRESHOLD_SIZE = 5000000000
-    THRESHOLD_RATIO = 100
-
-    def __init__(self, source_url: ParseResult | str, work_dir: Path | str, s3_client=None):
+    def __init__(
+        self,
+        source_url: ParseResult | str,
+        work_dir: Path | str,
+        s3_client=None,
+        thresholds=ExtractThresholds(),
+    ):
         self.source_url = self._validate_url(source_url)
         self.work_dir = self._validate_work_dir(work_dir)
         self.s3_client = self._validate_s3_client(s3_client)
         self.file_total = 0
         self.size_total = 0
+
+        self.thresholds = thresholds
 
     def _validate_url(self, url: ParseResult | str) -> ParseResult:
         parsed_url = url if isinstance(url, ParseResult) else urlparse(url)
@@ -204,13 +215,13 @@ class Extractor:
         self.file_total += count
 
         ratio = size / self.size_total
-        if ratio > self.THRESHOLD_RATIO:
+        if ratio > self.thresholds.ratio:
             raise AssertionError("Encountered suspicious compression ratio in the archive")
 
-        if self.size_total > self.THRESHOLD_SIZE:
+        if self.size_total > self.thresholds.size:
             raise AssertionError("The archive is too big")
 
-        if self.file_total > self.THRESHOLD_ENTRIES:
+        if self.file_total > self.thresholds.entries:
             raise AssertionError("Too many files in the archive")
 
     def _remove_from_stats(self, size, count=1):
@@ -236,9 +247,9 @@ class Extractor:
                 for content in result["Contents"]:
                     s3_content_count += 1
                     s3_content_size += content["Size"]
-                    if s3_content_count > self.THRESHOLD_ENTRIES:
+                    if s3_content_count > self.thresholds.entries:
                         raise AssertionError("Too many objects at %s" % self.source_url)
-                    if s3_content_size > self.THRESHOLD_SIZE:
+                    if s3_content_size > self.thresholds.size:
                         raise AssertionError(
                             "Size limit exceeded while downloading from %s" % self.source_url
                         )

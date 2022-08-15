@@ -5,15 +5,23 @@ from urllib.parse import ParseResult
 
 import pandas as pd
 
-from spark_log_parser.extractor import Extractor
+from spark_log_parser.extractor import Extractor, ExtractThresholds
 
 
 class EventLogBuilder:
-    def __init__(self, source_url: ParseResult | str, work_dir: Path | str, s3_client=None):
+    def __init__(
+        self,
+        source_url: ParseResult | str,
+        work_dir: Path | str,
+        s3_client=None,
+        extract_thresholds=ExtractThresholds(),
+    ):
         self.source_url = source_url
         self.work_dir = self._validate_work_dir(work_dir)
         self.s3_client = s3_client
-        self.extractor = Extractor(self.source_url, self.work_dir, self.s3_client)
+        self.extractor = Extractor(
+            self.source_url, self.work_dir, self.s3_client, extract_thresholds
+        )
 
     def _validate_work_dir(self, work_dir: Path | str) -> Path:
         work_dir_path = work_dir if isinstance(work_dir, Path) else Path(work_dir)
