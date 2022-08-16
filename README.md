@@ -19,7 +19,7 @@ If you have not already done so, complete the [instructions](https://github.com/
 log file destination with the -l flag.
 
     ```shell
-    spark_log_parser -l <log file location> -r <results directory>
+    spark-log-parser -l <log file location> -r <results directory>
     ```
 
     The parsed file `parsed-<log file name>` will appear in the results directory.
