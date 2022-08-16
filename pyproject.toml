@@ -37,7 +37,7 @@ test = [
 ]
 
 [project.scripts]
-parse = "spark_log_parser:main"
+spark-log-parser = "spark_log_parser.cli:main"
 
 [project.urls]
 Home = "https://github.com/synccomputingcode/spark_log_parser"
