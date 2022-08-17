@@ -36,6 +36,9 @@ test = [
     "flake8==4.0.1",
 ]
 
+[project.scripts]
+spark-log-parser = "spark_log_parser.cli:main"
+
 [project.urls]
 Home = "https://github.com/synccomputingcode/spark_log_parser"
 
