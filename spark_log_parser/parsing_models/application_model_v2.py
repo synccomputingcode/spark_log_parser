@@ -136,11 +136,11 @@ class sparkApplication:
             sql_tasks = []
 
             # Sometimes an SQL event will be missing. To be informative, both
-            # events must be present. But this information is not critical, so 
+            # events must be present. But this information is not critical, so
             # if either event is missing then simply reject the SQL data
             if "start_time" not in sql.keys() or "end_time" not in sql.keys():
                 continue
-            
+
             for jid, job in appobj.jobs.items():
 
                 if (job.submission_time >= sql["start_time"]) and (
