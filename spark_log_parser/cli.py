@@ -10,6 +10,7 @@ logging.captureWarnings(True)
 
 from spark_log_parser.eventlog import EventLogBuilder  # noqa: E402
 from spark_log_parser.parsing_models.application_model_v2 import sparkApplication  # noqa: E402
+from extractor import Extractor
 
 logger = logging.getLogger("spark_log_parser")
 
@@ -39,7 +40,10 @@ def main():
     print("--Processing log file: " + str(args.log_file))
 
     with tempfile.TemporaryDirectory() as work_dir:
-        event_log = EventLogBuilder(args.log_file.resolve().as_uri(), work_dir).build()
+
+        event_log_paths = Extractor(args.log_file.resolve().as_uri(), work_dir)
+
+        event_log = EventLogBuilder(event_log_paths, work_dir).build()
         app = sparkApplication(eventlog=str(event_log))
 
     if args.log_file.suffixes:
