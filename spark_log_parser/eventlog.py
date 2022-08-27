@@ -64,7 +64,7 @@ class EventLogBuilder:
     def _concat(self, rollover_dat: list[tuple[str, str, str]]) -> Path:
         rollover_df = pd.DataFrame(
             rollover_dat, columns=["rollover_index", "context_id", "path"]
-        ).sort_values("rollover_index")
+        ).sort_values("rollover_index").reset_index()
 
         if not len(rollover_df.context_id.unique()) == 1:
             raise ValueError("Not all rollover log files have the same Spark context ID")
