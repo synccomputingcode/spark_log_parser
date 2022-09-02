@@ -7,14 +7,13 @@ from spark_log_parser import eventlog, extractor
 
 
 class BadEventLog(unittest.TestCase):
-
     def check_value_error(self, event_log_path, msg):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with self.assertRaises(ValueError, msg=msg):
                 event_log_paths = extractor.Extractor(event_log_path.as_uri(), temp_dir).extract()
                 eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
-            
+
     def test_multiple_context_ids(self):
         event_log = Path("tests", "logs", "bad", "non-unique-context-id.zip").resolve()
         self.check_value_error(event_log, "Not all rollover files have the same Spark context ID")
@@ -43,7 +42,6 @@ class BadEventLog(unittest.TestCase):
                 )
 
             self.check_value_error(Path(temp_dir), "Rollover file appears to be missing")
-
 
     def test_empty_log_dir(self):
         with tempfile.TemporaryDirectory() as temp_dir:

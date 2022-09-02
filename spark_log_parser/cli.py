@@ -8,9 +8,10 @@ import spark_log_parser
 
 logging.captureWarnings(True)
 
+from extractor import Extractor
+
 from spark_log_parser.eventlog import EventLogBuilder  # noqa: E402
 from spark_log_parser.parsing_models.application_model_v2 import sparkApplication  # noqa: E402
-from extractor import Extractor
 
 logger = logging.getLogger("spark_log_parser")
 
