@@ -40,9 +40,7 @@ def main():
     print("--Processing log file: " + str(args.log_file))
 
     with tempfile.TemporaryDirectory() as work_dir:
-
         event_log_paths = Extractor(args.log_file.resolve().as_uri(), work_dir).extract()
-
         event_log = EventLogBuilder(event_log_paths, work_dir).build()
         app = sparkApplication(eventlog=str(event_log))
 
