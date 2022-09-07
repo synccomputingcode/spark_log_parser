@@ -3,6 +3,7 @@ import logging
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import unquote
 
 import spark_log_parser
 
@@ -40,7 +41,9 @@ def main():
     print("--Processing log file: " + str(args.log_file))
 
     with tempfile.TemporaryDirectory() as work_dir:
-        event_log_paths = Extractor(args.log_file.resolve().as_uri(), work_dir).extract()
+
+        log_path = unquote(args.log_file.resolve().as_uri())
+        event_log_paths = Extractor(log_path, work_dir).extract()
         event_log = EventLogBuilder(event_log_paths, work_dir).build()
         app = sparkApplication(eventlog=str(event_log))
 
