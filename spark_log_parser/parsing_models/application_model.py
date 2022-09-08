@@ -144,16 +144,21 @@ class ApplicationModel:
                         )
 
                     for job_id in self.jobs_for_stage[stage_id]:
-                        self.jobs[job_id].stages[stage_id].submission_time = (
-                            json_data["Stage Info"]["Submission Time"] / 1000
-                        )
-                        self.jobs[job_id].stages[stage_id].stage_name = json_data["Stage Info"][
-                            "Stage Name"
-                        ]
-                        self.jobs[job_id].stages[stage_id].num_tasks = json_data["Stage Info"][
-                            "Number of Tasks"
-                        ]
-                        self.jobs[job_id].stages[stage_id].stage_info = json_data["Stage Info"]
+
+                        # PROD-426 Submission Time key may be missing from stages that
+                        # don't get submitted. There is usually a StageCompleted event
+                        # shortly after.
+                        if "Submission Time" in json_data["Stage Info"]:
+                            self.jobs[job_id].stages[stage_id].submission_time = (
+                                json_data["Stage Info"]["Submission Time"] / 1000
+                            )
+                            self.jobs[job_id].stages[stage_id].stage_name = json_data["Stage Info"][
+                                "Stage Name"
+                            ]
+                            self.jobs[job_id].stages[stage_id].num_tasks = json_data["Stage Info"][
+                                "Number of Tasks"
+                            ]
+                            self.jobs[job_id].stages[stage_id].stage_info = json_data["Stage Info"]
 
                 elif event_type == "SparkListenerStageCompleted":
 
