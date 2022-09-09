@@ -37,7 +37,7 @@ def test_simple_databricks_log():
             "stageData",
             "taskData",
         ]
-    ), "All keys are present"
+    ), "Not all keys are present"
 
     assert (
         parsed["metadata"]["application_info"]["name"] == "Databricks Shell"
@@ -60,7 +60,7 @@ def test_simple_emr_log():
             "stageData",
             "taskData",
         ]
-    ), "All keys are present"
+    ), "Not all keys are present"
 
     assert (
         parsed["metadata"]["application_info"]["name"] == "Text Similarity"

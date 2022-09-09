@@ -71,7 +71,7 @@ def test_emr_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir
         with open(event_log) as log_fobj:
             event = json.loads(log_fobj.readline())
 
-    assert all(key in event for key in ["Event", "Spark Version"]), "All keys are present"
+    assert all(key in event for key in ["Event", "Spark Version"]), "Not all keys are present"
 
     assert event["Event"] == "SparkListenerLogStart", "Expected first event is present"
 
@@ -158,7 +158,7 @@ def test_databricks_log_from_s3_dir(event_log_url, event_log_file_archive, event
                                 "Rollover Number",
                                 "SparkContext Id",
                             ]
-                        ), "All keys are present"
+                        ), "Not all keys are present"
                         assert (
                             rollover_count == event["Rollover Number"]
                         ), "Contiguous monotonically increasing IDs"

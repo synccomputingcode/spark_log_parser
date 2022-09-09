@@ -33,7 +33,7 @@ def test_simple_databricks_log():
     assert all(
         key in event
         for key in ["Event", "Spark Version", "Timestamp", "Rollover Number", "SparkContext Id"]
-    ), "All keys are present"
+    ), "Not all keys are present"
 
 
 def test_raw_databricks_log():
@@ -43,7 +43,7 @@ def test_raw_databricks_log():
     assert all(
         key in event
         for key in ["Event", "Spark Version", "Timestamp", "Rollover Number", "SparkContext Id"]
-    ), "All keys are present"
+    ), "Not all keys are present"
 
     assert event["Event"] == "DBCEventLoggingListenerMetadata", "Expected first event is present"
 
@@ -55,7 +55,7 @@ def test_log_in_dir():
     assert all(
         key in event
         for key in ["Event", "Spark Version", "Timestamp", "Rollover Number", "SparkContext Id"]
-    ), "All keys are present"
+    ), "Not all keys are present"
 
     assert event["Event"] == "DBCEventLoggingListenerMetadata", "Expected first event is present"
 
