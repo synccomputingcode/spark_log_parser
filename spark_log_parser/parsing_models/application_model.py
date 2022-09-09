@@ -142,7 +142,7 @@ class ApplicationModel:
                         raise UrgentEventValidationException(
                             missing_event=f"Job Start for Stage {stage_id}"
                         )
-                    
+
                     if "Submission Time" not in json_data["Stage Info"]:
                         # PROD-426 Submission Time key may be missing from stages that
                         # don't get submitted. There is usually a StageCompleted event
