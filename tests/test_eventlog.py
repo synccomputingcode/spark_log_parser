@@ -24,7 +24,7 @@ def test_simple_emr_log():
     event = get_event(event_log_path)
 
     assert all(key in event for key in ["Event", "Spark Version"]), "All keys are present"
-    assert event["Event"] == "SparkListenerLogStart", "Expected first event is present"
+    assert event["Event"] == "SparkListenerLogStart", "First event is not as expected"
 
 
 def test_simple_databricks_log():
@@ -45,7 +45,7 @@ def test_raw_databricks_log():
         for key in ["Event", "Spark Version", "Timestamp", "Rollover Number", "SparkContext Id"]
     ), "Not all keys are present"
 
-    assert event["Event"] == "DBCEventLoggingListenerMetadata", "Expected first event is present"
+    assert event["Event"] == "DBCEventLoggingListenerMetadata", "First event is not as expected"
 
 
 def test_log_in_dir():
@@ -57,7 +57,7 @@ def test_log_in_dir():
         for key in ["Event", "Spark Version", "Timestamp", "Rollover Number", "SparkContext Id"]
     ), "Not all keys are present"
 
-    assert event["Event"] == "DBCEventLoggingListenerMetadata", "Expected first event is present"
+    assert event["Event"] == "DBCEventLoggingListenerMetadata", "First event is not as expected"
 
 
 class RolloverLog(unittest.TestCase):
@@ -103,7 +103,7 @@ class RolloverLog(unittest.TestCase):
                         ), "All keys are present"
                         assert (
                             rollover_count == event["Rollover Number"]
-                        ), "Contiguous monotonically increasing IDs"
+                        ), "Expected contiguous monotonically increasing IDs"
                         rollover_count += 1
 
                 assert rollover_count == log_file_total, "All log parts are present"
