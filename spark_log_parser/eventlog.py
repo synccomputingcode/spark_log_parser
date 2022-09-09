@@ -15,6 +15,7 @@ class EventLogBuilder:
         self.event_log_paths = self._validate_event_log_paths(event_log_paths)
         self.work_dir = self._validate_work_dir(work_dir)
 
+
     def _validate_event_log_paths(self, event_log_paths: list[Path] | list[str]) -> list[Path]:
         return [Path(x) for x in event_log_paths]
 

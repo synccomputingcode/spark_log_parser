@@ -143,6 +143,12 @@ class ApplicationModel:
                             missing_event=f"Job Start for Stage {stage_id}"
                         )
 
+                    if "Submission Time" not in json_data["Stage Info"]:
+                        # PROD-426 Submission Time key may be missing from stages that
+                        # don't get submitted. There is usually a StageCompleted event
+                        # shortly after.
+                        continue
+
                     for job_id in self.jobs_for_stage[stage_id]:
                         self.jobs[job_id].stages[stage_id].submission_time = (
                             json_data["Stage Info"]["Submission Time"] / 1000

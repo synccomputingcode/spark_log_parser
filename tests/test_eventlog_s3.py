@@ -71,9 +71,8 @@ def test_emr_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir
         with open(event_log) as log_fobj:
             event = json.loads(log_fobj.readline())
 
-    assert all(key in event for key in ["Event", "Spark Version"]), "All keys are present"
-
-    assert event["Event"] == "SparkListenerLogStart", "Expected first event is present"
+    assert all(key in event for key in ["Event", "Spark Version"]), "Not all keys are present"
+    assert event["Event"] == "SparkListenerLogStart", "Expected first event is not present"
 
 
 @pytest.mark.parametrize(
@@ -158,13 +157,13 @@ def test_databricks_log_from_s3_dir(event_log_url, event_log_file_archive, event
                                 "Rollover Number",
                                 "SparkContext Id",
                             ]
-                        ), "All keys are present"
+                        ), "Not all keys are present"
                         assert (
                             rollover_count == event["Rollover Number"]
-                        ), "Contiguous monotonically increasing IDs"
+                        ), "Rollover IDs are not contiguous and monotonically increasing"
                         rollover_count += 1
                 except Exception as exc:
                     raise ValueError("Problem with line %d: %s" % (i, event_str), exc)
 
-            assert rollover_count == 3, "All log parts are present"
-            assert i + 1 == 16945, "All events are present"
+            assert rollover_count == 3, "Not all log parts are present"
+            assert i + 1 == 16945, "Not all events are present"
