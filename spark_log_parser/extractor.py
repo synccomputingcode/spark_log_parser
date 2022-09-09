@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 class ExtractThresholds(BaseModel):
     entries = 100
-    size = 20000000000
+    size = 5000000000
     ratio = 100
 
 
