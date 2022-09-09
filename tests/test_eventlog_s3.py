@@ -10,7 +10,7 @@ import boto3 as boto
 import pytest
 from botocore.stub import ANY, Stubber
 
-from spark_log_parser import eventlog
+from spark_log_parser import eventlog, extractor
 
 
 @pytest.mark.parametrize(
@@ -65,7 +65,8 @@ def test_emr_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir
             chunk = fobj.read(chunk_size)
 
     with tempfile.TemporaryDirectory() as temp_dir, stubber:
-        event_log = eventlog.EventLogBuilder(event_log_url, temp_dir, s3).build()
+        event_log_paths = extractor.Extractor(event_log_url, temp_dir, s3).extract()
+        event_log = eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
 
         with open(event_log) as log_fobj:
             event = json.loads(log_fobj.readline())
@@ -134,7 +135,8 @@ def test_databricks_log_from_s3_dir(event_log_url, event_log_file_archive, event
                         chunk = zobj.read(chunk_size)
 
         with stubber:
-            event_log = eventlog.EventLogBuilder(event_log_url, temp_dir, s3).build()
+            event_log_paths = extractor.Extractor(event_log_url, temp_dir, s3).extract()
+            event_log = eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
 
         stubber.assert_no_pending_responses()
 

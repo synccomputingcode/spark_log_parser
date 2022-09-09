@@ -3,12 +3,14 @@ import logging
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import unquote
 
 import spark_log_parser
 
 logging.captureWarnings(True)
 
 from spark_log_parser.eventlog import EventLogBuilder  # noqa: E402
+from spark_log_parser.extractor import Extractor  # noqa: E402
 from spark_log_parser.parsing_models.application_model_v2 import sparkApplication  # noqa: E402
 
 logger = logging.getLogger("spark_log_parser")
@@ -39,7 +41,10 @@ def main():
     print("--Processing log file: " + str(args.log_file))
 
     with tempfile.TemporaryDirectory() as work_dir:
-        event_log = EventLogBuilder(args.log_file.resolve().as_uri(), work_dir).build()
+
+        log_path = unquote(args.log_file.resolve().as_uri())
+        event_log_paths = Extractor(log_path, work_dir).extract()
+        event_log = EventLogBuilder(event_log_paths, work_dir).build()
         app = sparkApplication(eventlog=str(event_log))
 
     if args.log_file.suffixes:

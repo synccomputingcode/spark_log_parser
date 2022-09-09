@@ -1,27 +1,22 @@
 import json
 import tempfile
 from pathlib import Path
-from urllib.parse import ParseResult
 
 import pandas as pd
-
-from spark_log_parser.extractor import Extractor, ExtractThresholds
 
 
 class EventLogBuilder:
     def __init__(
         self,
-        source_url: ParseResult | str,
+        event_log_paths: list[Path] | list[str],
         work_dir: Path | str,
-        s3_client=None,
-        extract_thresholds=ExtractThresholds(),
     ):
-        self.source_url = source_url
+
+        self.event_log_paths = self._validate_event_log_paths(event_log_paths)
         self.work_dir = self._validate_work_dir(work_dir)
-        self.s3_client = s3_client
-        self.extractor = Extractor(
-            self.source_url, self.work_dir, self.s3_client, extract_thresholds
-        )
+
+    def _validate_event_log_paths(self, event_log_paths: list[Path] | list[str]) -> list[Path]:
+        return [Path(x) for x in event_log_paths]
 
     def _validate_work_dir(self, work_dir: Path | str) -> Path:
         work_dir_path = work_dir if isinstance(work_dir, Path) else Path(work_dir)
@@ -31,12 +26,11 @@ class EventLogBuilder:
         return work_dir_path
 
     def build(self) -> Path:
-        paths = self.extractor.extract()
 
-        if not paths:
+        if not self.event_log_paths:
             raise ValueError("No files found")
 
-        self.event_log = self._get_event_log(paths)
+        self.event_log = self._get_event_log(self.event_log_paths)
 
         return self.event_log
 
@@ -68,9 +62,11 @@ class EventLogBuilder:
         return log_files[0]
 
     def _concat(self, rollover_dat: list[tuple[str, str, str]]) -> Path:
-        rollover_df = pd.DataFrame(
-            rollover_dat, columns=["rollover_index", "context_id", "path"]
-        ).sort_values("rollover_index")
+        rollover_df = (
+            pd.DataFrame(rollover_dat, columns=["rollover_index", "context_id", "path"])
+            .sort_values("rollover_index")
+            .reset_index()
+        )
 
         if not len(rollover_df.context_id.unique()) == 1:
             raise ValueError("Not all rollover log files have the same Spark context ID")
