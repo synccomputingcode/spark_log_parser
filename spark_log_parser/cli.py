@@ -42,10 +42,10 @@ def main():
 
     with tempfile.TemporaryDirectory() as work_dir:
 
-        log_path = unquote(args.log_file.resolve().as_uri())
         event_log_paths = Extractor(
-            log_path, work_dir, thresholds=ExtractThresholds(size=20000000000)
+            unquote(args.log_file.resolve().as_uri()), work_dir, thresholds=ExtractThresholds(size=20000000000)
         ).extract()
+
         event_log = EventLogBuilder(event_log_paths, work_dir).build()
         app = sparkApplication(eventlog=str(event_log))
 
