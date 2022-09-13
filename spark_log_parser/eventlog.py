@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from spark_log_parser.parsing_models.exceptions import LogSubmissionException
+
 
 class EventLogBuilder:
     def __init__(
@@ -14,7 +16,6 @@ class EventLogBuilder:
 
         self.event_log_paths = self._validate_event_log_paths(event_log_paths)
         self.work_dir = self._validate_work_dir(work_dir)
-
 
     def _validate_event_log_paths(self, event_log_paths: list[Path] | list[str]) -> list[Path]:
         return [Path(x) for x in event_log_paths]
@@ -29,7 +30,9 @@ class EventLogBuilder:
     def build(self) -> Path:
 
         if not self.event_log_paths:
-            raise ValueError("No files found")
+            raise LogSubmissionException(
+                error_message="No Spark eventlogs were found in submission"
+            )
 
         self.event_log = self._get_event_log(self.event_log_paths)
 
@@ -53,12 +56,16 @@ class EventLogBuilder:
 
         if rollover_dat:
             if len(log_files) > len(rollover_dat):
-                raise ValueError("No rollover properties found in log file")
+                raise LogSubmissionException(
+                    error_message="Multiple logs were discovered but not all had rollover properties"
+                )
 
             return self._concat(rollover_dat)
 
         if len(log_files) > 1:
-            raise ValueError("No rollover properties found in log file")
+            raise LogSubmissionException(
+                error_message="Multiple logs were discovered but not all had rollover properties"
+            )
 
         return log_files[0]
 
@@ -70,15 +77,17 @@ class EventLogBuilder:
         )
 
         if not len(rollover_df.context_id.unique()) == 1:
-            raise ValueError("Not all rollover log files have the same Spark context ID")
+            raise LogSubmissionException(
+                error_message="Not all rollover log files have the same Spark context ID"
+            )
 
         diffs = rollover_df.rollover_index.diff()
 
         if any(diffs > 1) or rollover_df.rollover_index[0] > 0:
-            raise ValueError("Rollover log file appears to be missing")
+            raise LogSubmissionException(error_message="One or more rollover logs is missing")
 
         if any(diffs < 1):
-            raise ValueError("Duplicate rollover log file detected")
+            raise LogSubmissionException(error_message="Duplicate rollover log file detected")
 
         event_log = Path(tempfile.mkstemp(suffix="-concatenated.json", dir=str(self.work_dir))[1])
         with open(event_log, "w") as fobj:
