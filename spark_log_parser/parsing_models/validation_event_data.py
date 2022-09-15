@@ -25,7 +25,7 @@ class EventDataValidation:
         """
         if not self.app.finish_time:
             self.message += (
-                f"{MSGS.MISSING_EVENT_GENERIC_MESSAGE} 'Application / Stage / SQL Completion'. "
+                MSGS.MISSING_EVENT_GENERIC_MESSAGE + "'Application / Stage / SQL Completion'. "
             )
 
         self.validate_job_events()
