@@ -43,10 +43,17 @@ def main():
     with tempfile.TemporaryDirectory() as work_dir:
 
         event_log_paths = Extractor(
-            unquote(args.log_file.resolve().as_uri()), work_dir, thresholds=ExtractThresholds(size=20000000000)
+            unquote(args.log_file.resolve().as_uri()),
+            work_dir,
+            thresholds=ExtractThresholds(size=20000000000),
         ).extract()
 
-        event_log = EventLogBuilder(event_log_paths, work_dir).build()
+        event_log, parsed = EventLogBuilder(event_log_paths, work_dir).build()
+
+        if parsed:
+            print("Input log is already parsed")
+            return
+
         app = sparkApplication(eventlog=str(event_log))
 
     if args.log_file.suffixes:

@@ -11,34 +11,37 @@ def get_event(event_log_path):
 
     with tempfile.TemporaryDirectory() as temp_dir:
         event_log_paths = extractor.Extractor(event_log_path.resolve().as_uri(), temp_dir).extract()
-        event_log = eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
+        event_log, parsed = eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
 
         with open(event_log) as log_fobj:
             event = json.loads(log_fobj.readline())
 
-        return event
+        return event, parsed
 
 
 def test_simple_emr_log():
     event_log_path = Path("tests", "logs", "emr.zip").resolve()
-    event = get_event(event_log_path)
+    event, parsed = get_event(event_log_path)
 
     assert all(key in event for key in ["Event", "Spark Version"]), "Not all keys are present"
     assert event["Event"] == "SparkListenerLogStart", "First event is not as expected"
+    assert not parsed
 
 
 def test_simple_databricks_log():
     event_log_path = Path("tests", "logs", "databricks.zip").resolve()
-    event = get_event(event_log_path)
+    event, parsed = get_event(event_log_path)
+
     assert all(
         key in event
         for key in ["Event", "Spark Version", "Timestamp", "Rollover Number", "SparkContext Id"]
     ), "Not all keys are present"
+    assert not parsed
 
 
 def test_raw_databricks_log():
     event_log_path = Path("tests", "logs", "databricks.json").resolve()
-    event = get_event(event_log_path)
+    event, parsed = get_event(event_log_path)
 
     assert all(
         key in event
@@ -46,12 +49,12 @@ def test_raw_databricks_log():
     ), "Not all keys are present"
 
     assert event["Event"] == "DBCEventLoggingListenerMetadata", "First event is not as expected"
-
+    assert not parsed
 
 
 def test_log_in_dir():
     event_log_path = Path("tests", "logs", "log_in_dir", "databricks.json.gz").resolve()
-    event = get_event(event_log_path)
+    event, parsed = get_event(event_log_path)
 
     assert all(
         key in event
@@ -59,6 +62,7 @@ def test_log_in_dir():
     ), "Not all keys are present"
 
     assert event["Event"] == "DBCEventLoggingListenerMetadata", "First event is not as expected"
+    assert not parsed
 
 
 class RolloverLog(unittest.TestCase):
@@ -82,7 +86,7 @@ class RolloverLog(unittest.TestCase):
             event_log_paths = extractor.Extractor(
                 event_log_path.resolve().as_uri(), temp_dir
             ).extract()
-            event_log = eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
+            event_log, parsed = eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
 
             with open(event_log) as log_fobj:
                 event = json.loads(log_fobj.readline())
@@ -109,3 +113,9 @@ class RolloverLog(unittest.TestCase):
 
                 assert rollover_count == log_file_total, "Not all log parts are present"
                 assert i + 1 == log_entry_total, "Not all events are present"
+                assert not parsed
+
+
+if __name__ == "__main__":
+
+    test_simple_emr_log()
