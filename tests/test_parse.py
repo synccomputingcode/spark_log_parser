@@ -37,7 +37,6 @@ def test_simple_databricks_log():
     parsed = get_parsed_log(event_log_path)
 
     assert all(key in parsed for key in PARSED_KEYS), "Not all keys are present"
-
     assert (
         parsed["metadata"]["application_info"]["name"] == "Databricks Shell"
     ), "Name is as expected"
@@ -49,7 +48,6 @@ def test_simple_emr_log():
     parsed = get_parsed_log(event_log_path)
 
     assert all(key in parsed for key in PARSED_KEYS), "Not all keys are present"
-
     assert (
         parsed["metadata"]["application_info"]["name"] == "Text Similarity"
     ), "Name is as expected"
@@ -61,9 +59,9 @@ def test_parsed_log():
     with tempfile.TemporaryDirectory() as temp_dir:
         event_log_paths = extractor.Extractor(event_log_path.resolve().as_uri(), temp_dir).extract()
         event_log, parsed = eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
-        sparkApplication(spark_eventlog_parsed_path=str(event_log))
+        assert parsed
 
-    assert parsed
+        sparkApplication(spark_eventlog_parsed_path=str(event_log))
 
 
 def test_emr_missing_sql_events():
@@ -72,7 +70,7 @@ def test_emr_missing_sql_events():
     with tempfile.TemporaryDirectory() as temp_dir:
         event_log_paths = extractor.Extractor(event_log_path.resolve().as_uri(), temp_dir).extract()
         event_log, parsed = eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
-        obj = sparkApplication(spark_eventlog_path=str(event_log))
+        assert not parsed
 
-    assert list(obj.sqlData.index.values) == [0, 2, 3, 5, 6, 7, 8]
-    assert not parsed
+        obj = sparkApplication(spark_eventlog_path=str(event_log))
+        assert list(obj.sqlData.index.values) == [0, 2, 3, 5, 6, 7, 8]

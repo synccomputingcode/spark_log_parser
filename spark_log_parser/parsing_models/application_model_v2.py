@@ -19,42 +19,38 @@ class sparkApplication:
         self,
         spark_eventlog_parsed_path=None,
         spark_eventlog_path=None,  # application_model object
-        appobj=None,
         stdout=None,
         debug=False,
     ):
 
-        self.eventlog = spark_eventlog_path
+        self.spark_eventlog_path = spark_eventlog_path
+        self.spark_eventlog_parsed_path = spark_eventlog_parsed_path
         self.existsSQL = False
         self.existsExecutors = False
-        # self.sparkMetadata = {}
         self.metadata = {}
         self.stdout = stdout
         self.debug = debug
 
-        if spark_eventlog_parsed_path is not None:  # Load a previously saved sparkApplication Model
-            self.load(filepath=spark_eventlog_parsed_path)
+        if (
+            self.spark_eventlog_parsed_path is not None
+        ):  # Load a previously saved sparkApplication Model
+            self.load(filepath=self.spark_eventlog_parsed_path)
 
-        if (appobj is not None) or (
-            self.eventlog is not None
-        ):  # Load an application_model or eventlog
+        elif self.spark_eventlog_path is not None:  # Load an application_model or eventlog
 
-            if self.eventlog is not None:
-                t0 = time.time()
-                if "s3://" in self.eventlog:
-                    path = self.eventlog.replace("s3://", "").split("/")
-                    bucket = path[0]
-                    path = "/".join(path[1:])
-                else:
-                    path = self.eventlog
-                    bucket = None
-
-                appobj = ApplicationModel(
-                    eventlogpath=path, bucket=bucket, stdoutpath=stdout, debug=debug
-                )
-                logging.info("Loaded object from spark eventlog [%.2fs]" % (time.time() - t0))
+            t0 = time.time()
+            if "s3://" in self.spark_eventlog_path:
+                path = self.spark_eventlog_path.replace("s3://", "").split("/")
+                bucket = path[0]
+                path = "/".join(path[1:])
             else:
-                logging.info("Loaded object from ApplicationModel object")
+                path = self.spark_eventlog_path
+                bucket = None
+
+            appobj = ApplicationModel(
+                eventlogpath=path, bucket=bucket, stdoutpath=stdout, debug=debug
+            )
+            logging.info("Loaded object from spark eventlog [%.2fs]" % (time.time() - t0))
 
             self.validate_app(appobj, self.debug)
 
@@ -653,9 +649,11 @@ class sparkApplication:
 
     def save_to_local(self, saveDat, filepath, compress):
         if filepath is None:
-            if self.eventlog is None:
+            if self.spark_eventlog_path is None:
                 raise Exception('No input eventlog found. Must specify "filepath".')
-            inputFile = os.path.basename(os.path.normpath(self.eventlog)).replace(".gz", "")
+            inputFile = os.path.basename(os.path.normpath(self.spark_eventlog_path)).replace(
+                ".gz", ""
+            )
             filepath = inputFile + "-sync"
 
         if compress is False:
