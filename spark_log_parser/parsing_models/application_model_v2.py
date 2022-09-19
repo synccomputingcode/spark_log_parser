@@ -17,14 +17,14 @@ from .validation_event_data import EventDataValidation
 class sparkApplication:
     def __init__(
         self,
-        objfile=None,  # Previously saved object. This is the fastest and best option
-        appobj=None,  # application_model object
-        eventlog=None,  # spark eventlog path,
+        spark_eventlog_parsed_path=None,
+        spark_eventlog_path=None,  # application_model object
+        appobj=None,
         stdout=None,
         debug=False,
     ):
 
-        self.eventlog = eventlog
+        self.eventlog = spark_eventlog_path
         self.existsSQL = False
         self.existsExecutors = False
         # self.sparkMetadata = {}
@@ -32,19 +32,21 @@ class sparkApplication:
         self.stdout = stdout
         self.debug = debug
 
-        if objfile is not None:  # Load a previously saved sparkApplication Model
-            self.load(filepath=objfile)
+        if spark_eventlog_parsed_path is not None:  # Load a previously saved sparkApplication Model
+            self.load(filepath=spark_eventlog_parsed_path)
 
-        if (appobj is not None) or (eventlog is not None):  # Load an application_model or eventlog
+        if (appobj is not None) or (
+            self.eventlog is not None
+        ):  # Load an application_model or eventlog
 
-            if eventlog is not None:
+            if self.eventlog is not None:
                 t0 = time.time()
-                if "s3://" in eventlog:
-                    path = eventlog.replace("s3://", "").split("/")
+                if "s3://" in self.eventlog:
+                    path = self.eventlog.replace("s3://", "").split("/")
                     bucket = path[0]
                     path = "/".join(path[1:])
                 else:
-                    path = eventlog
+                    path = self.eventlog
                     bucket = None
 
                 appobj = ApplicationModel(

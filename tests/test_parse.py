@@ -23,7 +23,7 @@ def get_parsed_log(event_log_path):
         event_log, _ = eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
 
         result_path = str(Path(temp_dir, "result"))
-        sparkApplication(eventlog=str(event_log)).save(result_path)
+        sparkApplication(spark_eventlog_path=str(event_log)).save(result_path)
 
         with open(result_path + ".json") as result_fobj:
             parsed = json.load(result_fobj)
@@ -60,7 +60,8 @@ def test_parsed_log():
 
     with tempfile.TemporaryDirectory() as temp_dir:
         event_log_paths = extractor.Extractor(event_log_path.resolve().as_uri(), temp_dir).extract()
-        _, parsed = eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
+        event_log, parsed = eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
+        sparkApplication(spark_eventlog_parsed_path=str(event_log))
 
     assert parsed
 
@@ -71,7 +72,7 @@ def test_emr_missing_sql_events():
     with tempfile.TemporaryDirectory() as temp_dir:
         event_log_paths = extractor.Extractor(event_log_path.resolve().as_uri(), temp_dir).extract()
         event_log, parsed = eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
-        obj = sparkApplication(eventlog=str(event_log))
+        obj = sparkApplication(spark_eventlog_path=str(event_log))
 
     assert list(obj.sqlData.index.values) == [0, 2, 3, 5, 6, 7, 8]
     assert not parsed
