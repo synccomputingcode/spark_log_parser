@@ -18,7 +18,7 @@ class sparkApplication:
     def __init__(
         self,
         spark_eventlog_parsed_path=None,
-        spark_eventlog_path=None,  # application_model object
+        spark_eventlog_path=None,
         stdout=None,
         debug=False,
     ):
@@ -31,12 +31,10 @@ class sparkApplication:
         self.stdout = stdout
         self.debug = debug
 
-        if (
-            self.spark_eventlog_parsed_path is not None
-        ):  # Load a previously saved sparkApplication Model
+        if self.spark_eventlog_parsed_path is not None:
             self.load(filepath=self.spark_eventlog_parsed_path)
 
-        elif self.spark_eventlog_path is not None:  # Load an application_model or eventlog
+        elif self.spark_eventlog_path is not None:
 
             t0 = time.time()
             if "s3://" in self.spark_eventlog_path:
