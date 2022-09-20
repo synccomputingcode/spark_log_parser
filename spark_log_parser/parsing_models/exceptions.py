@@ -12,7 +12,6 @@ class SyncParserException(Exception):
         error_type: str = None,
         error_message: str = None,
         status_code: int = None,
-        exception: Exception = None,
     ):
 
         super().__init__(error_message)
@@ -23,10 +22,6 @@ class SyncParserException(Exception):
 
         # 2022-03-25 RW:  Format the information in the way it is expected by the backend code
         self.error = {"error": error_type, "message": error_message}
-
-        logger.error(error_message)
-        if exception:
-            logger.exception(exception)
 
     def get_ui_return_value(self) -> dict:
         """
@@ -74,7 +69,6 @@ class ConfigurationException(SyncParserException):
             error_type=ParserErrorTypes.SPARK_CONFIG_ERROR,
             error_message=error_message,
             status_code=ParserErrorCodes.SPARK_CONFIG_ERROR,
-            exception=None,
         )
 
 
@@ -95,7 +89,6 @@ class LazyEventValidationException(SyncParserException):
             error_type=ParserErrorTypes.MISSING_EVENT_ERROR,
             error_message=error_message,
             status_code=ParserErrorCodes.SPARK_EVENT_ERROR,
-            exception=None,
         )
 
 
@@ -116,7 +109,6 @@ class UrgentEventValidationException(SyncParserException):
             error_type=ParserErrorTypes.MISSING_EVENT_ERROR,
             error_message=error_message,
             status_code=ParserErrorCodes.SPARK_EVENT_ERROR,
-            exception=None,
         )
 
 
@@ -131,5 +123,4 @@ class LogSubmissionException(SyncParserException):
             error_type=ParserErrorTypes.LOG_SUBMISSION_ERROR,
             error_message=error_message,
             status_code=ParserErrorCodes.LOG_SUBMISSION_ERROR,
-            exception=None,
         )
