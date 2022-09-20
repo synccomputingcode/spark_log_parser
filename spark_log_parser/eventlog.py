@@ -66,7 +66,7 @@ class EventLogBuilder:
                     continue
 
         if len(log_files) > 1 and parsed:
-            raise ValueError("A parsed log file was submitted with other log files")
+            raise LogSubmissionException("A parsed log file was submitted with other log files")
 
         if rollover_dat:
             if len(log_files) > len(rollover_dat):

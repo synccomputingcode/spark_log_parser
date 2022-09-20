@@ -44,7 +44,7 @@ class BadEventLog(unittest.TestCase):
 
     def test_mixed_parsed(self):
         event_log = Path("tests", "logs", "bad", "mixed_parsed.zip").resolve()
-        self.check_value_error(event_log, "A parsed log file was submitted with other log files")
+        self.check_sync_exceptions(event_log, "A parsed log file was submitted with other log files")
 
     def test_only_non_first_part(self):
         with tempfile.TemporaryDirectory() as temp_dir:
