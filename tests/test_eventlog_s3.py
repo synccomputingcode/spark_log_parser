@@ -66,13 +66,14 @@ def test_emr_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir
 
     with tempfile.TemporaryDirectory() as temp_dir, stubber:
         event_log_paths = extractor.Extractor(event_log_url, temp_dir, s3).extract()
-        event_log = eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
+        event_log, parsed = eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
 
         with open(event_log) as log_fobj:
             event = json.loads(log_fobj.readline())
 
     assert all(key in event for key in ["Event", "Spark Version"]), "Not all keys are present"
     assert event["Event"] == "SparkListenerLogStart", "Expected first event is not present"
+    assert not parsed
 
 
 @pytest.mark.parametrize(
@@ -135,7 +136,7 @@ def test_databricks_log_from_s3_dir(event_log_url, event_log_file_archive, event
 
         with stubber:
             event_log_paths = extractor.Extractor(event_log_url, temp_dir, s3).extract()
-            event_log = eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
+            event_log, _ = eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
 
         stubber.assert_no_pending_responses()
 
