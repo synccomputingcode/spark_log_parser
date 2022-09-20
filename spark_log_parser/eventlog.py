@@ -71,7 +71,8 @@ class EventLogBuilder:
         if rollover_dat:
             if len(log_files) > len(rollover_dat):
                 raise LogSubmissionException(
-                    error_message="Rollover logs were detected, but not all files had rollover properties")
+                    error_message="Rollover logs were detected, but not all files had rollover properties"
+                )
 
             return self._concat(rollover_dat), False
 
@@ -79,7 +80,6 @@ class EventLogBuilder:
             raise LogSubmissionException(
                 error_message="Multiple files detected without log rollover properties"
             )
-
 
         return log_files[0], parsed
 
