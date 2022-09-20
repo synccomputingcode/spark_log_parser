@@ -15,15 +15,11 @@ pip3 install https://github.com/synccomputingcode/spark_log_parser/archive/main.
 If you have not already done so, complete the [instructions](https://github.com/synccomputingcode/user_documentation/wiki#accessing-autotuner-input-data) to download the Apache Spark event log.
 
 ### Step 1: Parse the log to strip away sensitive information
-1. To process a log file, execute the parse.py script in the sync_parser folder, and provide a
-log file destination with the -l flag.
-
+1. To process a log file execute the spark-log-parser command with a log file path and a directory in which to store the result like so:
     ```shell
-    spark-log-parser -l <log file location> -r <results directory>
+    spark-log-parser -l <log file location> -r <result directory>
     ```
-
-    The parsed file `parsed-<log file name>` will appear in the results directory.
-
+    The parsed file `parsed-<log file name>` will appear in the result directory.
 
 2. Send Sync Computing the parsed log
 

@@ -13,7 +13,6 @@ class EventLogBuilder:
         event_log_paths: list[Path] | list[str],
         work_dir: Path | str,
     ):
-
         self.event_log_paths = self._validate_event_log_paths(event_log_paths)
         self.work_dir = self._validate_work_dir(work_dir)
 
@@ -27,47 +26,62 @@ class EventLogBuilder:
 
         return work_dir_path
 
-    def build(self) -> Path:
+    def build(self) -> tuple[Path, bool]:
 
         if not self.event_log_paths:
             raise LogSubmissionException(
                 error_message="No Spark eventlogs were found in submission"
             )
 
-        self.event_log = self._get_event_log(self.event_log_paths)
+        self.event_log, self.parsed = self._get_event_log(self.event_log_paths)
 
-        return self.event_log
+        return self.event_log, self.parsed
 
-    def _get_event_log(self, paths: list[Path]) -> Path:
+    def _get_event_log(self, paths: list[Path]) -> tuple[Path, bool]:
+
         log_files = []
         rollover_dat = []
+        parsed = False
         for path in paths:
-            with open(path) as fobj:
-                try:
+            try:  # Test if it is a raw log
+                with open(path) as fobj:
                     line = json.loads(fobj.readline())
+                    if "Event" in line:
+                        log_files.append(path)
+                        if line["Event"] == "DBCEventLoggingListenerMetadata":
+                            rollover_dat.append(
+                                (line["Rollover Number"], line["SparkContext Id"], path)
+                            )
+                    else:
+                        raise ValueError
+
+            except ValueError:
+                try:  # Test if it is a parsed log
+                    with open(path) as fobj:
+                        data = json.load(fobj)
+                        if "jobData" in data:
+                            log_files.append(path)
+                            parsed = True
                 except ValueError:
                     continue
-                if "Event" in line:
-                    log_files.append(path)
-                    if line["Event"] == "DBCEventLoggingListenerMetadata":
-                        rollover_dat.append(
-                            (line["Rollover Number"], line["SparkContext Id"], path)
-                        )
+
+        if len(log_files) > 1 and parsed:
+            raise ValueError("A parsed log file was submitted with other log files")
 
         if rollover_dat:
             if len(log_files) > len(rollover_dat):
                 raise LogSubmissionException(
-                    error_message="Multiple logs were discovered but not all had rollover properties"
-                )
+                    error_message="Rollover logs were detected, but not all files had rollover properties")
 
-            return self._concat(rollover_dat)
+            return self._concat(rollover_dat), False
 
         if len(log_files) > 1:
             raise LogSubmissionException(
-                error_message="Multiple logs were discovered but not all had rollover properties"
+                error_message="Multiple files detected without log rollover properties"
             )
 
-        return log_files[0]
+
+        return log_files[0], parsed
 
     def _concat(self, rollover_dat: list[tuple[str, str, str]]) -> Path:
         rollover_df = (

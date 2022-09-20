@@ -27,8 +27,8 @@ class BadEventLog(unittest.TestCase):
     def test_missing_dbc_event(self):
         event_log = Path("tests", "logs", "bad", "missing-dbc-event.zip").resolve()
         self.check_sync_exceptions(
-            event_log, "Multiple logs were discovered but not all had rollover properties"
-        )
+            event_log, "Rollover logs were detected, but not all files had rollover properties")
+
 
     def test_duplicate_log_part(self):
         event_log = Path("tests", "logs", "bad", "duplicate-part.tgz").resolve()
@@ -41,6 +41,10 @@ class BadEventLog(unittest.TestCase):
     def test_missing_first_part(self):
         event_log = Path("tests", "logs", "bad", "missing-first-part.zip").resolve()
         self.check_sync_exceptions(event_log, "One or more rollover logs is missing")
+
+    def test_mixed_parsed(self):
+        event_log = Path("tests", "logs", "bad", "mixed_parsed.zip").resolve()
+        self.check_value_error(event_log, "A parsed log file was submitted with other log files")
 
     def test_only_non_first_part(self):
         with tempfile.TemporaryDirectory() as temp_dir:

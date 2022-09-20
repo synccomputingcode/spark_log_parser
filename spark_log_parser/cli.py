@@ -2,6 +2,8 @@ import argparse
 import logging
 import sys
 import tempfile
+import json
+import shutil
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -40,15 +42,6 @@ def main():
     print("\n" + "*" * 12 + " Running the Log Parser for Spark Predictor " + "*" * 12 + "\n")
     print("--Processing log file: " + str(args.log_file))
 
-    with tempfile.TemporaryDirectory() as work_dir:
-
-        event_log_paths = Extractor(
-            unquote(args.log_file.resolve().as_uri()), work_dir, thresholds=ExtractThresholds(size=20000000000)
-        ).extract()
-
-        event_log = EventLogBuilder(event_log_paths, work_dir).build()
-        app = sparkApplication(eventlog=str(event_log))
-
     if args.log_file.suffixes:
         result_path = args.result_dir.joinpath(
             "parsed-" + args.log_file.name[: -len("".join(args.log_file.suffixes))]
@@ -56,6 +49,21 @@ def main():
     else:
         result_path = args.result_dir.joinpath("parsed-" + args.log_file.name)
 
-    app.save(str(result_path))
+    with tempfile.TemporaryDirectory() as work_dir:
+
+        event_log_paths = Extractor(
+            unquote(args.log_file.resolve().as_uri()),
+            work_dir,
+            thresholds=ExtractThresholds(size=20000000000),
+        ).extract()
+
+        event_log, parsed = EventLogBuilder(event_log_paths, work_dir).build()
+
+        if not parsed:
+            app = sparkApplication(spark_eventlog_path=str(event_log))
+            app.save(str(result_path))
+        else:
+            print("--Input log was already parsed")
+            shutil.copyfile(event_log, str(result_path) + ".json")
 
     print(f"--Result saved to: {result_path}.json")
