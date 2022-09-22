@@ -35,24 +35,6 @@ class SyncParserException(Exception):
         """
         return json.dumps({"error": self.error_type, "message": self.error_message})
 
-    def get_exception_response(self) -> dict:
-        """
-        Used to get an example response, which will be used for
-        the swagger documentation.
-
-        Returns:
-            dict: error response
-        """
-        # Convert into a pydantic model in future iterations
-        # once flask is stripped away
-        return {
-            "error": {
-                "type": self.error_type,
-                "code": self.status_code,
-                "message": self.error_message,
-            }
-        }
-
 
 class ConfigurationException(SyncParserException):
     def __init__(self, config_recs: str):
@@ -112,7 +94,7 @@ class UrgentEventValidationException(SyncParserException):
         )
 
 
-class LogSubmissionException(SyncParserException):
+class LogSubmissionException(SyncParserException, ValueError):
     """
     This Exception is for malformed log submission
     """
