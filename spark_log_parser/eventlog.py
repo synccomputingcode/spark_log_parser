@@ -17,6 +17,11 @@ class EventLogBuilder:
         self.work_dir = self._validate_work_dir(work_dir)
 
     def _validate_event_log_paths(self, event_log_paths: list[Path] | list[str]) -> list[Path]:
+        if not event_log_paths:
+            raise LogSubmissionException(
+                error_message="No Spark eventlogs were found in submission"
+            )
+
         return [Path(x) for x in event_log_paths]
 
     def _validate_work_dir(self, work_dir: Path | str) -> Path:
@@ -27,22 +32,10 @@ class EventLogBuilder:
         return work_dir_path
 
     def build(self) -> tuple[Path, bool]:
-
-        if not self.event_log_paths:
-            raise LogSubmissionException(
-                error_message="No Spark eventlogs were found in submission"
-            )
-
-        self.event_log, self.parsed = self._get_event_log(self.event_log_paths)
-
-        return self.event_log, self.parsed
-
-    def _get_event_log(self, paths: list[Path]) -> tuple[Path, bool]:
-
         log_files = []
         rollover_dat = []
         parsed = False
-        for path in paths:
+        for path in self.event_log_paths:
             try:  # Test if it is a raw log
                 with open(path) as fobj:
                     line = json.loads(fobj.readline())
@@ -65,8 +58,8 @@ class EventLogBuilder:
                 except ValueError:
                     continue
 
-        if len(log_files) > 1 and parsed:
-            raise LogSubmissionException("A parsed log file was submitted with other log files")
+        if not log_files:
+            raise LogSubmissionException(error_message="No log files found")
 
         if rollover_dat:
             if len(log_files) > len(rollover_dat):
@@ -77,6 +70,9 @@ class EventLogBuilder:
             return self._concat(rollover_dat), False
 
         if len(log_files) > 1:
+            if parsed:
+                raise LogSubmissionException("A parsed log file was submitted with other log files")
+
             raise LogSubmissionException(
                 error_message="Multiple files detected without log rollover properties"
             )

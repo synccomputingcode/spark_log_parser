@@ -16,7 +16,7 @@ class BadEventLog(unittest.TestCase):
                 event_log_paths = extractor.Extractor(event_log_path.as_uri(), temp_dir).extract()
                 eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
 
-            assert str(cm.exception) == msg  # , "Exception message matches"
+            assert str(cm.exception) == msg
 
     def test_multiple_context_ids(self):
         event_log = Path("tests", "logs", "bad", "non-unique-context-id.zip").resolve()
@@ -62,3 +62,7 @@ class BadEventLog(unittest.TestCase):
             self.check_sync_exceptions(
                 Path(temp_dir), "No Spark eventlogs were found in submission"
             )
+
+    def test_empty_log_file(self):
+        with tempfile.NamedTemporaryFile() as temp_file:
+            self.check_sync_exceptions(Path(temp_file.name), "No log files found")

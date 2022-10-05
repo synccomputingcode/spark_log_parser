@@ -231,6 +231,8 @@ class Extractor:
     def _download(self):
         if self.source_url.scheme == "https":
             response = requests.get(self.source_url.geturl(), stream=True)
+            response.raise_for_status()
+
             target_path = self.work_dir.joinpath(self.source_url.path.split("/")[-1])
             with open(target_path, "wb") as fobj:
                 for chunk in response.iter_content():
