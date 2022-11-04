@@ -62,7 +62,7 @@ class ConfigValidationDatabricks(ConfigValidation):
 
         configs = self.app.spark_metadata
 
-        if (key in configs) and (configs[key]==val):
+        if (key in configs) and (configs[key] == val):
             logger.info('Detected Databricks Autoscaling')
             self.config_recs.append('Disable Databricks Autoscaling')
 
@@ -92,7 +92,7 @@ class ConfigValidationEMR(ConfigValidation):
         """
 
         exec_cores = []
-        for id, e in self.app.executors.items():
+        for _, e in self.app.executors.items():
             exec_cores.append(e.cores)
 
         if not all(e == exec_cores[0] for e in exec_cores):

@@ -55,6 +55,7 @@ class ApplicationModel:
 
         self.cloud_platform = None
         self.cloud_provider = None
+        self.cluster_id = None
         self.spark_version = None
 
         # if bucket is None, then files are in local directory, else read from s3
@@ -194,20 +195,26 @@ class ApplicationModel:
 
                 elif event_type == "SparkListenerEnvironmentUpdate":
 
-                    curKeys = json_data["Spark Properties"].keys()
+                    spark_properties = json_data["Spark Properties"]
+                    event_keys = spark_properties.keys()
 
                     # This if is specifically for databricks logs
-                    if "spark.databricks.clusterUsageTags.sparkVersion" in curKeys:
-
+                    if spark_version := spark_properties["spark.databricks.clusterUsageTags.sparkVersion"]:
                         self.cloud_platform = "databricks"
-                        self.cloud_provider = json_data["Spark Properties"][
+                        self.spark_version = spark_version
+                        self.cluster_id = spark_properties["spark.databricks.clusterUsageTags.clusterId"]
+                        self.cloud_provider = spark_properties[
                             "spark.databricks.clusterUsageTags.cloudProvider"
                         ].lower()
-                        self.spark_version = json_data["Spark Properties"][
-                            "spark.databricks.clusterUsageTags.sparkVersion"
-                        ]
+                    elif cluster_id := json_data["System Properties"]["EMR_CLUSTER_ID"]:
+                        self.cloud_platform = "emr"
+                        self.cloud_provider = "aws"
+                        self.cluster_id = cluster_id
+                    else:
+                        raise UrgentEventValidationException(
+                            "Unable to determine the platform this job was run on - these logs may be from an unsupported platform.")
 
-                    self.spark_metadata = {**self.spark_metadata, **json_data["Spark Properties"]}
+                    self.spark_metadata = {**self.spark_metadata, **spark_properties}
 
                     ##################################
                     # Note to predictor team:
@@ -216,21 +223,21 @@ class ApplicationModel:
                     # section below once we make minor tweaks to predictor.
                     ##################################
 
-                    # if 'spark.executor.instances' in curKeys:
-                    #     self.num_executors = int(json_data["Spark Properties"]["spark.executor.instances"])
-                    if "spark.default.parallelism" in curKeys:
+                    # if 'spark.executor.instances' in event_keys:
+                    #     self.num_executors = int(spark_properties["spark.executor.instances"])
+                    if "spark.default.parallelism" in event_keys:
                         self.parallelism = int(
-                            json_data["Spark Properties"]["spark.default.parallelism"]
+                            spark_properties["spark.default.parallelism"]
                         )
-                    if "spark.executor.memory" in curKeys:
-                        self.memory_per_executor = json_data["Spark Properties"][
+                    if "spark.executor.memory" in event_keys:
+                        self.memory_per_executor = spark_properties[
                             "spark.executor.memory"
                         ]
-                    # if 'spark.executor.cores' in curKeys:
-                    #    self.cores_per_executor = int(json_data["Spark Properties"]["spark.executor.cores"])
-                    if "spark.sql.shuffle.partitions" in curKeys:
+                    # if 'spark.executor.cores' in event_keys:
+                    #    self.cores_per_executor = int(spark_properties["spark.executor.cores"])
+                    if "spark.sql.shuffle.partitions" in event_keys:
                         self.shuffle_partitions = int(
-                            json_data["Spark Properties"]["spark.sql.shuffle.partitions"]
+                            spark_properties["spark.sql.shuffle.partitions"]
                         )
 
                 elif event_type == "SparkListenerExecutorAdded":
@@ -310,10 +317,8 @@ class ApplicationModel:
                 self.jobs[0].add_event(line, False)
 
         if not self.cloud_platform:
-            self.cloud_platform = "emr"
-            self.cloud_provider = "aws"
-            # self.spark_metadata['cloud_platform'] = 'emr'
-            # self.spark_metadata['cloud_provider'] = 'aws'
+            raise UrgentEventValidationException(
+                "Unable to determine the platform this job was run on - these logs may be incomplete and missing SparkListenerEnvironmentUpdate events.")
 
         self.dag.decipher_dag()
         self.dag.add_broadcast_dependencies(self.stdoutpath)
