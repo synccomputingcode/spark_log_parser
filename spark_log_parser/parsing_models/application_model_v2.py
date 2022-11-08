@@ -594,6 +594,7 @@ class sparkApplication:
                 "name": appobj.app_name,
                 "id": appobj.spark_metadata["spark.app.id"],
                 "spark_version": appobj.spark_version,
+                "emr_version_tag": appobj.emr_version_tag,
                 "cloud_platform": appobj.cloud_platform,
                 "cloud_provider": appobj.cloud_provider,
                 "cluster_id": appobj.cluster_id

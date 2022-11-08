@@ -57,6 +57,8 @@ class ApplicationModel:
         self.cloud_provider = None
         self.cluster_id = None
         self.spark_version = None
+        self.emr_version_tag = None
+
 
         # if bucket is None, then files are in local directory, else read from s3
         # read event log
@@ -210,9 +212,7 @@ class ApplicationModel:
                         self.cloud_platform = "emr"
                         self.cloud_provider = "aws"
                         self.cluster_id = cluster_id
-                    else:
-                        raise UrgentEventValidationException(
-                            "Unable to determine the platform this job was run on - these logs may be from an unsupported platform.")
+                        self.emr_version_tag = json_data["System Properties"]["EMR_RELEASE_LABEL"]
 
                     self.spark_metadata = {**self.spark_metadata, **spark_properties}
 
@@ -317,8 +317,11 @@ class ApplicationModel:
                 self.jobs[0].add_event(line, False)
 
         if not self.cloud_platform:
-            raise UrgentEventValidationException(
-                "Unable to determine the platform this job was run on - these logs may be incomplete and missing SparkListenerEnvironmentUpdate events.")
+            # Ideally, we would be able to determine the platform/provider reliably from our Spark logs. However, EMR
+            # logs may not necessarily contain an SparkListenerEnvironmentUpdate event, so if we don't encounter one,
+            # we will assume this is an EMR job running on AWS
+            self.cloud_platform = "emr"
+            self.cloud_provider = "aws"
 
         self.dag.decipher_dag()
         self.dag.add_broadcast_dependencies(self.stdoutpath)
