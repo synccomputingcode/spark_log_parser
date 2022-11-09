@@ -82,7 +82,6 @@ class sparkApplication:
             logging.info("sparkApplication object creation complete")
 
     def validate_app(self, appobj, debug):
-
         if appobj.cloud_platform == "emr":
             val1 = ConfigValidationEMR(app=appobj, debug=debug)
         elif appobj.cloud_platform == "databricks":
@@ -595,10 +594,14 @@ class sparkApplication:
                 "name": appobj.app_name,
                 "id": appobj.spark_metadata["spark.app.id"],
                 "spark_version": appobj.spark_version,
+                "emr_version_tag": appobj.emr_version_tag,
                 "cloud_platform": appobj.cloud_platform,
                 "cloud_provider": appobj.cloud_provider,
+                "cluster_id": appobj.cluster_id
             },
             "spark_params": appobj.spark_metadata,
+            "existsSQL": self.existsSQL,
+            "existsExecutors": self.existsExecutors
         }
 
     def addMetadata(self, key=None, value=None):
@@ -637,8 +640,6 @@ class sparkApplication:
             saveDat["executors"] = self.executorData.reset_index().to_dict("list")
 
         saveDat["metadata"] = self.metadata
-        saveDat["metadata"]["existsSQL"] = self.existsSQL
-        saveDat["metadata"]["existsExecutors"] = self.existsExecutors
 
         if (filepath is not None) and ("s3://" in filepath):
             self.save_to_s3(saveDat, filepath, compress)

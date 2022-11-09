@@ -104,3 +104,9 @@ dmypy.json
 
 # Vim
 *.sw[op]
+
+# PyCharm
+.idea/
+
+# macOS
+*.DS_Store*
