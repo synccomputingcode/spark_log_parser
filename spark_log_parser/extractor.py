@@ -31,6 +31,8 @@ class Extractor:
         work_dir: Path | str,
         s3_client=None,
         thresholds=ExtractThresholds(),
+        # For data over https, default to loading 1MB chunks of the file at a time
+        http_chunk_size=1024 * 1024
     ):
         self.source_url = self._validate_url(source_url)
         self.work_dir = self._validate_work_dir(work_dir)
@@ -39,6 +41,7 @@ class Extractor:
         self.size_total = 0
 
         self.thresholds = thresholds
+        self.http_chunk_size = http_chunk_size
 
     def _validate_url(self, url: ParseResult | str) -> ParseResult:
         parsed_url = url if isinstance(url, ParseResult) else urlparse(url)
@@ -235,7 +238,7 @@ class Extractor:
 
             target_path = self.work_dir.joinpath(self.source_url.path.split("/")[-1])
             with open(target_path, "wb") as fobj:
-                for chunk in response.iter_content():
+                for chunk in response.iter_content(chunk_size=self.http_chunk_size):
                     fobj.write(chunk)
         elif self.source_url.scheme == "s3":
             source_key = self.source_url.path.lstrip("/")
