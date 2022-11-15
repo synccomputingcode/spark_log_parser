@@ -25,6 +25,8 @@ dependencies = [
     "ujson==5.3.0",
     "pydantic==1.9.0",
     "requests==2.26.0",
+    "aiodataloader==0.2.1",
+    "microbench==0.8"
 ]
 dynamic = ["version", "description"]
 

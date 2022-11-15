@@ -1,9 +1,8 @@
 import argparse
 import logging
+import shutil
 import sys
 import tempfile
-import json
-import shutil
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -13,7 +12,7 @@ logging.captureWarnings(True)
 
 from spark_log_parser.eventlog import EventLogBuilder  # noqa: E402
 from spark_log_parser.extractor import Extractor, ExtractThresholds  # noqa: E402
-from spark_log_parser.parsing_models.application_model_v2 import sparkApplication  # noqa: E402
+from spark_log_parser.parsing_models.application_model_v2 import SparkApplication  # noqa: E402
 
 logger = logging.getLogger("spark_log_parser")
 
@@ -60,7 +59,7 @@ def main():
         event_log, parsed = EventLogBuilder(event_log_paths, work_dir).build()
 
         if not parsed:
-            app = sparkApplication(spark_eventlog_path=str(event_log))
+            app = SparkApplication(spark_eventlog_path=str(event_log))
             app.save(str(result_path))
         else:
             print("--Input log was already parsed")

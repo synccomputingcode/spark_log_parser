@@ -1,10 +1,7 @@
 import collections
-import gzip
 import os
 
-import boto3
 import numpy
-import ujson as json
 
 from .dag_model import DagModel
 from .exceptions import UrgentEventValidationException
@@ -15,7 +12,7 @@ from .job_model import JobModel
 def get_json(line):
     # Need to first strip the trailing newline, and then escape newlines (which can appear
     # in the middle of some of the JSON) so that JSON library doesn't barf.
-    return json.loads(line.strip("\n").replace("\n", "\\n"))
+    return line
 
 
 class ApplicationModel:
@@ -28,9 +25,9 @@ class ApplicationModel:
 
     """
 
-    def __init__(self, eventlogpath, bucket=None, stdoutpath=None, debug=False):  # noqa: C901
+    def __init__(self, log_lines, bucket=None, stdoutpath=None, debug=False):  # noqa: C901
         # set default parameters
-        self.eventlogpath = eventlogpath
+        # self.eventlogpath = eventlogpath
         self.dag = DagModel()
         self.jobs = collections.defaultdict(JobModel)
         self.sql = collections.defaultdict(dict)
@@ -59,262 +56,204 @@ class ApplicationModel:
         self.spark_version = None
         self.emr_version_tag = None
 
-
-        # if bucket is None, then files are in local directory, else read from s3
-        # read event log
-
-        # Todo:  2022-03-26 RW:  Consider centralizing file access for easier error handling
-
-        if bucket is None:
-
-            # 2022-03-26  RW  Todo:  These file accesses will fail with invalid URL
-            if ".gz" in eventlogpath:
-                f = gzip.open(eventlogpath, "rt")
-            else:
-                f = open(eventlogpath, "r")
-            test_line = f.readline()
-            # print(get_json(test_line))
-
-        else:
-            s3_resource = boto3.resource("s3")
-            bucket = s3_resource.Bucket(bucket)
-            key = eventlogpath
-            obj = bucket.Object(key=key)
-            # 2022-03-26  RW  Todo:  This will fail with invalid URL
-            response = obj.get()
-
-            if ".gz" in key:
-                filestring = gzip.decompress(response["Body"].read()).decode("utf-8")
-            else:
-                filestring = response["Body"].read().decode("utf-8")
-
-            f = filestring.splitlines(True)
-            test_line = f[0]
-
-        try:
-            get_json(test_line)
-            is_json = True
-            # print("Parsing file %s as JSON" % eventlogpath)
-        except Exception:
-            is_json = False
-            print("Not json file. Check eventlog.")
-
-        if bucket is None:
-            f.seek(0)
-
         hosts = []
 
-        for line in f:
-            if is_json:
-                json_data = get_json(line)
-                event_type = json_data["Event"]
-                if event_type == "SparkListenerLogStart":
-                    # spark_version_dict = {"spark_version": json_data["Spark Version"]}
-                    self.spark_version = json_data["Spark Version"]
-                    self.spark_metadata = {**self.spark_metadata}
-                elif event_type == "SparkListenerJobStart":
+        for line in log_lines:
+            json_data = get_json(line)
+            event_type = json_data["Event"]
+            if event_type == "SparkListenerLogStart":
+                # spark_version_dict = {"spark_version": json_data["Spark Version"]}
+                self.spark_version = json_data["Spark Version"]
+                self.spark_metadata = {**self.spark_metadata}
+            elif event_type == "SparkListenerJobStart":
 
-                    job_id = json_data["Job ID"]
-                    self.jobs[job_id].submission_time = json_data["Submission Time"] / 1000
-                    # Avoid using "Stage Infos" here, which was added in 1.2.0.
-                    stage_ids = json_data["Stage IDs"]
+                job_id = json_data["Job ID"]
+                self.jobs[job_id].submission_time = json_data["Submission Time"] / 1000
+                # Avoid using "Stage Infos" here, which was added in 1.2.0.
+                stage_ids = json_data["Stage IDs"]
 
-                    # print("Stage ids: %s" % stage_ids)
-                    for stage_id in stage_ids:
-                        if stage_id not in self.jobs_for_stage:
-                            self.jobs_for_stage[stage_id] = [job_id]
-                        else:
-                            self.jobs_for_stage[stage_id].append(job_id)
+                # print("Stage ids: %s" % stage_ids)
+                for stage_id in stage_ids:
+                    if stage_id not in self.jobs_for_stage:
+                        self.jobs_for_stage[stage_id] = [job_id]
+                    else:
+                        self.jobs_for_stage[stage_id].append(job_id)
 
-                elif event_type == "SparkListenerJobEnd":
-                    job_id = json_data["Job ID"]
-                    self.jobs[job_id].completion_time = json_data["Completion Time"] / 1000
-                    self.jobs[job_id].result = json_data["Job Result"]["Result"]
-                elif event_type == "SparkListenerTaskEnd":
-                    stage_id = json_data["Stage ID"]
-                    # Add the event to all of the jobs that depend on the stage.
-                    for jid in self.jobs_for_stage[stage_id]:
-                        self.jobs[jid].add_event(json_data, True)
+            elif event_type == "SparkListenerJobEnd":
+                job_id = json_data["Job ID"]
+                self.jobs[job_id].completion_time = json_data["Completion Time"] / 1000
+                self.jobs[job_id].result = json_data["Job Result"]["Result"]
+            elif event_type == "SparkListenerTaskEnd":
+                stage_id = json_data["Stage ID"]
+                # Add the event to all of the jobs that depend on the stage.
+                for jid in self.jobs_for_stage[stage_id]:
+                    self.jobs[jid].add_event(json_data, True)
 
-                elif event_type == "SparkListenerStageSubmitted":
+            elif event_type == "SparkListenerStageSubmitted":
 
-                    # stages may not be executed exclusively from one job
-                    stage_id = json_data["Stage Info"]["Stage ID"]
+                # stages may not be executed exclusively from one job
+                stage_id = json_data["Stage Info"]["Stage ID"]
 
-                    if (stage_id not in self.jobs_for_stage) and (not debug):
-                        raise UrgentEventValidationException(
-                            missing_event=f"Job Start for Stage {stage_id}"
-                        )
+                if (stage_id not in self.jobs_for_stage) and (not debug):
+                    raise UrgentEventValidationException(
+                        missing_event=f"Job Start for Stage {stage_id}"
+                    )
 
-                    if "Submission Time" not in json_data["Stage Info"]:
-                        # PROD-426 Submission Time key may be missing from stages that
-                        # don't get submitted. There is usually a StageCompleted event
-                        # shortly after.
-                        continue
+                if "Submission Time" not in json_data["Stage Info"]:
+                    # PROD-426 Submission Time key may be missing from stages that
+                    # don't get submitted. There is usually a StageCompleted event
+                    # shortly after.
+                    continue
 
-                    for job_id in self.jobs_for_stage[stage_id]:
-                        self.jobs[job_id].stages[stage_id].submission_time = (
-                            json_data["Stage Info"]["Submission Time"] / 1000
-                        )
-                        self.jobs[job_id].stages[stage_id].stage_name = json_data["Stage Info"][
-                            "Stage Name"
-                        ]
-                        self.jobs[job_id].stages[stage_id].num_tasks = json_data["Stage Info"][
-                            "Number of Tasks"
-                        ]
-                        self.jobs[job_id].stages[stage_id].stage_info = json_data["Stage Info"]
+                for job_id in self.jobs_for_stage[stage_id]:
+                    self.jobs[job_id].stages[stage_id].submission_time = (
+                        json_data["Stage Info"]["Submission Time"] / 1000
+                    )
+                    self.jobs[job_id].stages[stage_id].stage_name = json_data["Stage Info"][
+                        "Stage Name"
+                    ]
+                    self.jobs[job_id].stages[stage_id].num_tasks = json_data["Stage Info"][
+                        "Number of Tasks"
+                    ]
+                    self.jobs[job_id].stages[stage_id].stage_info = json_data["Stage Info"]
 
-                elif event_type == "SparkListenerStageCompleted":
+            elif event_type == "SparkListenerStageCompleted":
 
-                    # stages may not be executed exclusively from one job
-                    stage_id = json_data["Stage Info"]["Stage ID"]
-                    self.finish_time = json_data["Stage Info"]["Completion Time"] / 1000
+                # stages may not be executed exclusively from one job
+                stage_id = json_data["Stage Info"]["Stage ID"]
+                self.finish_time = json_data["Stage Info"]["Completion Time"] / 1000
 
-                    for job_id in self.jobs_for_stage[stage_id]:
-                        self.jobs[job_id].stages[stage_id].completion_time = (
-                            json_data["Stage Info"]["Completion Time"] / 1000
-                        )
+                for job_id in self.jobs_for_stage[stage_id]:
+                    self.jobs[job_id].stages[stage_id].completion_time = (
+                        json_data["Stage Info"]["Completion Time"] / 1000
+                    )
 
-                    # SPC-213 This fixes the case where a job submission occurs after a related
-                    # stage submission. This should only happen if a stage belongs to two jobs
-                    job_id_with_valid_stage = None
-                    for job_id in self.jobs_for_stage[stage_id]:
-                        if hasattr(self.jobs[job_id].stages[stage_id], "submission_time"):
-                            job_id_with_valid_stage = job_id
-                            break
+                # SPC-213 This fixes the case where a job submission occurs after a related
+                # stage submission. This should only happen if a stage belongs to two jobs
+                job_id_with_valid_stage = None
+                for job_id in self.jobs_for_stage[stage_id]:
+                    if hasattr(self.jobs[job_id].stages[stage_id], "submission_time"):
+                        job_id_with_valid_stage = job_id
+                        break
 
-                    # Make sure job-data for each job-id associated with this stage-id contains the
-                    # valid stage data
-                    for job_id in self.jobs_for_stage[stage_id]:
-                        self.jobs[job_id].stages[stage_id] = self.jobs[
-                            job_id_with_valid_stage
-                        ].stages[stage_id]
 
-                    if (job_id_with_valid_stage is None) and (not debug):
-                        raise UrgentEventValidationException(
-                            missing_event=f"Stage {stage_id} Submit"
-                        )
-
-                elif event_type == "SparkListenerEnvironmentUpdate":
-
-                    spark_properties = json_data["Spark Properties"]
-                    event_keys = spark_properties.keys()
-
-                    # This if is specifically for databricks logs
-                    if spark_version := spark_properties.get("spark.databricks.clusterUsageTags.sparkVersion"):
-                        self.cloud_platform = "databricks"
-                        self.spark_version = spark_version
-                        self.cluster_id = spark_properties["spark.databricks.clusterUsageTags.clusterId"]
-                        self.cloud_provider = spark_properties[
-                            "spark.databricks.clusterUsageTags.cloudProvider"
-                        ].lower()
-                    elif cluster_id := json_data.get("System Properties", {}).get("EMR_CLUSTER_ID"):
-                        self.cloud_platform = "emr"
-                        self.cloud_provider = "aws"
-                        self.cluster_id = cluster_id
-                        self.emr_version_tag = json_data["System Properties"]["EMR_RELEASE_LABEL"]
-
-                    self.spark_metadata = {**self.spark_metadata, **spark_properties}
-
-                    ##################################
-                    # Note to predictor team:
-                    # Keeping these for now so nothing breaks, but adding transferring the entire Spark Properties dictionary above
-                    # so we can see what has been set and don't have to manually grab every property. Should be able to remove the
-                    # section below once we make minor tweaks to predictor.
-                    ##################################
-
-                    # if 'spark.executor.instances' in event_keys:
-                    #     self.num_executors = int(spark_properties["spark.executor.instances"])
-                    if "spark.default.parallelism" in event_keys:
-                        self.parallelism = int(
-                            spark_properties["spark.default.parallelism"]
-                        )
-                    if "spark.executor.memory" in event_keys:
-                        self.memory_per_executor = spark_properties[
-                            "spark.executor.memory"
-                        ]
-                    # if 'spark.executor.cores' in event_keys:
-                    #    self.cores_per_executor = int(spark_properties["spark.executor.cores"])
-                    if "spark.sql.shuffle.partitions" in event_keys:
-                        self.shuffle_partitions = int(
-                            spark_properties["spark.sql.shuffle.partitions"]
-                        )
-
-                elif event_type == "SparkListenerExecutorAdded":
-                    hosts.append(json_data["Executor Info"]["Host"])
-                    self.cores_per_executor = int(json_data["Executor Info"]["Total Cores"])
-                    self.num_executors = self.num_executors + 1
-                    self.max_executors = max(self.num_executors, self.max_executors)
-                    self.executors[json_data["Executor ID"]] = ExecutorModel(json_data)
-                    self.executors[json_data["Executor ID"]].removed_reason = ""
-
-                # So far logs I've looked at only explicitly remove Executors when there is a problem like
-                # lost worker. Use this to flag premature executor removal
-                elif event_type == "SparkListenerExecutorRemoved":
-                    self.executorRemovedEarly = True
-                    self.num_executors = self.num_executors - 1
-                    self.executors[json_data["Executor ID"]].end_time = json_data["Timestamp"]
-                    self.executors[json_data["Executor ID"]].removed_reason = json_data[
-                        "Removed Reason"
+                # Make sure job-data for each job-id associated with this stage-id contains the
+                # valid stage data
+                for job_id in self.jobs_for_stage[stage_id]:
+                    self.jobs[job_id].stages[stage_id] = self.jobs[job_id_with_valid_stage].stages[
+                        stage_id
                     ]
 
-                elif event_type == "SparkListenerApplicationStart":
-                    self.start_time = json_data["Timestamp"] / 1000
-                    self.app_name = json_data["App Name"]
+                if (job_id_with_valid_stage is None) and (not debug):
+                    raise UrgentEventValidationException(missing_event=f"Stage {stage_id} Submit")
 
-                elif event_type == "SparkListenerApplicationEnd":
-                    self.finish_time = json_data["Timestamp"] / 1000
+            elif event_type == "SparkListenerEnvironmentUpdate":
 
-                elif (
-                    event_type == "org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart"
+                spark_properties = json_data["Spark Properties"]
+                event_keys = spark_properties.keys()
+
+                # This if is specifically for databricks logs
+                if spark_version := spark_properties.get(
+                    "spark.databricks.clusterUsageTags.sparkVersion"
                 ):
+                    self.cloud_platform = "databricks"
+                    self.spark_version = spark_version
+                    self.cluster_id = spark_properties[
+                        "spark.databricks.clusterUsageTags.clusterId"
+                    ]
+                    self.cloud_provider = spark_properties[
+                        "spark.databricks.clusterUsageTags.cloudProvider"
+                    ].lower()
+                elif cluster_id := json_data.get("System Properties", {}).get("EMR_CLUSTER_ID"):
+                    self.cloud_platform = "emr"
+                    self.cloud_provider = "aws"
+                    self.cluster_id = cluster_id
+                    self.emr_version_tag = json_data["System Properties"]["EMR_RELEASE_LABEL"]
 
-                    sql_id = json_data["executionId"]
-                    self.sql[sql_id]["start_time"] = json_data["time"] / 1000
-                    self.sql[sql_id]["description"] = json_data["description"]
-                    self.parse_all_accum_metrics(json_data)
+                self.spark_metadata = {**self.spark_metadata, **spark_properties}
 
-                elif event_type == "org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd":
-                    sql_id = json_data["executionId"]
-                    self.sql[sql_id]["end_time"] = json_data["time"] / 1000
-                    self.finish_time = json_data["time"] / 1000
+                ##################################
+                # Note to predictor team:
+                # Keeping these for now so nothing breaks, but adding transferring the entire Spark Properties dictionary above
+                # so we can see what has been set and don't have to manually grab every property. Should be able to remove the
+                # section below once we make minor tweaks to predictor.
+                ##################################
 
-                elif (
-                    event_type
-                    == "org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate"
-                ):
-                    self.parse_all_accum_metrics(json_data)
+                # if 'spark.executor.instances' in event_keys:
+                #     self.num_executors = int(spark_properties["spark.executor.instances"])
+                if "spark.default.parallelism" in event_keys:
+                    self.parallelism = int(spark_properties["spark.default.parallelism"])
+                if "spark.executor.memory" in event_keys:
+                    self.memory_per_executor = spark_properties["spark.executor.memory"]
+                # if 'spark.executor.cores' in event_keys:
+                #    self.cores_per_executor = int(spark_properties["spark.executor.cores"])
+                if "spark.sql.shuffle.partitions" in event_keys:
+                    self.shuffle_partitions = int(spark_properties["spark.sql.shuffle.partitions"])
 
-                # populate accumulated metrics with updated values
-                elif (
-                    event_type
-                    == "org.apache.spark.sql.execution.ui.SparkListenerDriverAccumUpdates"
-                ):
-                    sql_id = json_data["executionId"]
-                    for metric in json_data["accumUpdates"]:
-                        accum_id = metric[0]
-                        self.accum_metrics[accum_id]["value"] = metric[1]
-                        self.accum_metrics[accum_id]["sql_id"] = sql_id
+            elif event_type == "SparkListenerExecutorAdded":
+                hosts.append(json_data["Executor Info"]["Host"])
+                self.cores_per_executor = int(json_data["Executor Info"]["Total Cores"])
+                self.num_executors = self.num_executors + 1
+                self.max_executors = max(self.num_executors, self.max_executors)
+                self.executors[json_data["Executor ID"]] = ExecutorModel(json_data)
+                self.executors[json_data["Executor ID"]].removed_reason = ""
 
-                elif (
-                    event_type == "org.apache.spark.sql.execution.ui.SparkListenerEffectiveSQLConf"
-                ):
-                    #########################
-                    # Note to predictor team:
-                    # This is spark parameters for each sql execution id
-                    # Need to decide how we want to deal with this.
-                    # Right now the last one is saved, but need to figure out if we want to deal with each execution id's parameters
-                    #########################
-                    self.spark_metadata = {**self.spark_metadata, **json_data["effectiveSQLConf"]}
+            # So far logs I've looked at only explicitly remove Executors when there is a problem like
+            # lost worker. Use this to flag premature executor removal
+            elif event_type == "SparkListenerExecutorRemoved":
+                self.executorRemovedEarly = True
+                self.num_executors = self.num_executors - 1
+                self.executors[json_data["Executor ID"]].end_time = json_data["Timestamp"]
+                self.executors[json_data["Executor ID"]].removed_reason = json_data[
+                    "Removed Reason"
+                ]
 
-                # Add DAG components
-                # using stage submitted to preserve order stages are submitted
-                if event_type in ["SparkListenerJobStart", "SparkListenerStageSubmitted"]:
-                    self.dag.parse_dag(json_data)
+            elif event_type == "SparkListenerApplicationStart":
+                self.start_time = json_data["Timestamp"] / 1000
+                self.app_name = json_data["App Name"]
 
-            else:
-                # The file will only contain information for one job.
-                self.jobs[0].add_event(line, False)
+            elif event_type == "SparkListenerApplicationEnd":
+                self.finish_time = json_data["Timestamp"] / 1000
+
+            elif event_type == "org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart":
+
+                sql_id = json_data["executionId"]
+                self.sql[sql_id]["start_time"] = json_data["time"] / 1000
+                self.sql[sql_id]["description"] = json_data["description"]
+                self.parse_all_accum_metrics(json_data)
+
+            elif event_type == "org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd":
+                sql_id = json_data["executionId"]
+                self.sql[sql_id]["end_time"] = json_data["time"] / 1000
+                self.finish_time = json_data["time"] / 1000
+
+            elif (
+                event_type
+                == "org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate"
+            ):
+                self.parse_all_accum_metrics(json_data)
+
+            # populate accumulated metrics with updated values
+            elif event_type == "org.apache.spark.sql.execution.ui.SparkListenerDriverAccumUpdates":
+                sql_id = json_data["executionId"]
+                for metric in json_data["accumUpdates"]:
+                    accum_id = metric[0]
+                    self.accum_metrics[accum_id]["value"] = metric[1]
+                    self.accum_metrics[accum_id]["sql_id"] = sql_id
+
+            elif event_type == "org.apache.spark.sql.execution.ui.SparkListenerEffectiveSQLConf":
+                #########################
+                # Note to predictor team:
+                # This is spark parameters for each sql execution id
+                # Need to decide how we want to deal with this.
+                # Right now the last one is saved, but need to figure out if we want to deal with each execution id's parameters
+                #########################
+                self.spark_metadata = {**self.spark_metadata, **json_data["effectiveSQLConf"]}
+
+            # Add DAG components
+            # using stage submitted to preserve order stages are submitted
+            if event_type in ["SparkListenerJobStart", "SparkListenerStageSubmitted"]:
+                self.dag.parse_dag(json_data)
 
         if not self.cloud_platform:
             # Ideally, we would be able to determine the platform/provider reliably from our Spark logs. However, EMR
@@ -329,7 +268,6 @@ class ApplicationModel:
         self.num_instances = len(numpy.unique(hosts))
         self.executors_per_instance = numpy.ceil(self.num_executors / self.num_instances)
 
-        # print("Finished reading input data:")
         for job_id, job in self.jobs.items():
             job.initialize_job()
             # print("Job", job_id, " has stages: ", job.stages.keys())
