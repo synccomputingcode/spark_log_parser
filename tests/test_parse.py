@@ -3,7 +3,7 @@ import tempfile
 from pathlib import Path
 
 from spark_log_parser import eventlog, extractor
-from spark_log_parser.parsing_models.application_model_v2 import sparkApplication
+from spark_log_parser.parsing_models.application_model_v2 import create_spark_application
 
 PARSED_KEYS = [
     "accumData",
@@ -19,11 +19,14 @@ PARSED_KEYS = [
 def get_parsed_log(event_log_path):
 
     with tempfile.TemporaryDirectory() as temp_dir:
+        # This is actually extracting the Remote file into a local temp directory, so these unit tests are only testing
+        # the Local parsing paths
         event_log_paths = extractor.Extractor(event_log_path.resolve().as_uri(), temp_dir).extract()
         event_log, _ = eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
 
         result_path = str(Path(temp_dir, "result"))
-        sparkApplication(spark_eventlog_path=str(event_log)).save(result_path)
+        spark_app = create_spark_application(spark_eventlog_path=str(event_log))
+        spark_app.save(result_path)
 
         with open(result_path + ".json") as result_fobj:
             parsed = json.load(result_fobj)
@@ -58,10 +61,12 @@ def test_parsed_log():
 
     with tempfile.TemporaryDirectory() as temp_dir:
         event_log_paths = extractor.Extractor(event_log_path.resolve().as_uri(), temp_dir).extract()
+        # This is actually extracting the Remote file into a local temp directory, so these unit tests are only testing
+        # the Local parsing paths
         event_log, parsed = eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
         assert parsed
 
-        sparkApplication(spark_eventlog_parsed_path=str(event_log))
+        create_spark_application(spark_eventlog_parsed_path=str(event_log))
 
 
 def test_emr_missing_sql_events():
@@ -72,5 +77,5 @@ def test_emr_missing_sql_events():
         event_log, parsed = eventlog.EventLogBuilder(event_log_paths, temp_dir).build()
         assert not parsed
 
-        obj = sparkApplication(spark_eventlog_path=str(event_log))
-        assert list(obj.sqlData.index.values) == [0, 2, 3, 5, 6, 7, 8]
+        spark_app = create_spark_application(spark_eventlog_path=str(event_log))
+        assert list(spark_app.sqlData.index.values) == [0, 2, 3, 5, 6, 7, 8]

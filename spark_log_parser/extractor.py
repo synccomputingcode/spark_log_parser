@@ -266,4 +266,5 @@ class Extractor:
                         *content["Key"][relative_index:].split("/")
                     )
                     target_path.parent.mkdir(parents=True, exist_ok=True)
+                    print(target_path)
                     self.s3_client.download_file(source_bucket, content["Key"], str(target_path))
