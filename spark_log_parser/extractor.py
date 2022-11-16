@@ -32,7 +32,7 @@ class Extractor:
         s3_client=None,
         thresholds=ExtractThresholds(),
         # For data over https, default to loading 1MB chunks of the file at a time
-        http_chunk_size=1024 * 1024
+        http_chunk_size=1024 * 1024,
     ):
         self.source_url = self._validate_url(source_url)
         self.work_dir = self._validate_work_dir(work_dir)
@@ -235,6 +235,9 @@ class Extractor:
         if self.source_url.scheme == "https":
             response = requests.get(self.source_url.geturl(), stream=True)
             response.raise_for_status()
+
+            if not int(response.headers.get("Content-Length", 0)):
+                raise AssertionError("Download is empty")
 
             target_path = self.work_dir.joinpath(self.source_url.path.split("/")[-1])
             with open(target_path, "wb") as fobj:
