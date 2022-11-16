@@ -201,14 +201,14 @@ class ApplicationModel:
                     event_keys = spark_properties.keys()
 
                     # This if is specifically for databricks logs
-                    if spark_version := spark_properties["spark.databricks.clusterUsageTags.sparkVersion"]:
+                    if spark_version := spark_properties.get("spark.databricks.clusterUsageTags.sparkVersion"):
                         self.cloud_platform = "databricks"
                         self.spark_version = spark_version
                         self.cluster_id = spark_properties["spark.databricks.clusterUsageTags.clusterId"]
                         self.cloud_provider = spark_properties[
                             "spark.databricks.clusterUsageTags.cloudProvider"
                         ].lower()
-                    elif cluster_id := json_data["System Properties"]["EMR_CLUSTER_ID"]:
+                    elif cluster_id := json_data.get("System Properties", {}).get("EMR_CLUSTER_ID"):
                         self.cloud_platform = "emr"
                         self.cloud_provider = "aws"
                         self.cluster_id = cluster_id
