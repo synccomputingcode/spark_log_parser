@@ -100,6 +100,7 @@ class Extractor:
             )
         if extension.endswith(".gz"):
             return self._extract_gz(event_log, extract_dir.joinpath(event_log.name[: -len(".gz")]))
+
         if extension in {".json", ".log", ""}:
             return [event_log]
 
@@ -244,8 +245,17 @@ class Extractor:
                 for chunk in response.iter_content(chunk_size=self.http_chunk_size):
                     fobj.write(chunk)
         elif self.source_url.scheme == "s3":
-            source_key = self.source_url.path.lstrip("/")
+            """
+            s3 protocol formats look like -
+                s3://some/path/to/file/file.ext
+            
+            When parsed with urllib.parse, the first part of the path will be parsed as the `netloc` (which is
+            'some' from our above example). The rest of the path will show up under `path`. So when we call 
+            s3_client.list_objects_v2(Bucket=netloc, Prefix=path), we are basically filtering sub-paths within
+            that top-level bucket that match that path! TBD is there is a more efficient way to do this. 
+            """
             source_bucket = self.source_url.netloc
+            source_key = self.source_url.path.lstrip("/")
 
             s3_content_count = 0
             s3_content_size = 0
@@ -266,5 +276,4 @@ class Extractor:
                         *content["Key"][relative_index:].split("/")
                     )
                     target_path.parent.mkdir(parents=True, exist_ok=True)
-                    print(target_path)
                     self.s3_client.download_file(source_bucket, content["Key"], str(target_path))

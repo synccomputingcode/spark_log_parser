@@ -16,6 +16,9 @@ from aiodataloader import DataLoader
 from .application_model import ApplicationModel
 from .validation_configs import ConfigValidationDatabricks, ConfigValidationEMR
 from .validation_event_data import EventDataValidation
+from ..loaders.json import JSONBlobDataLoader, JSONLinesDataLoader, RawJSONLinesDataLoader, RawJSONBlobDataLoader
+from ..loaders.local_file import LocalFileBlobDataLoader, LocalFileLinesDataLoader
+from ..loaders.s3 import S3FileBlobDataLoader, S3FileLinesDataLoader
 
 
 class SparkApplication:
@@ -102,146 +105,6 @@ class SparkApplication:
         logging.info("Saved object to cloud: %s" % (key))
 
 
-class AbstractLocalFileDataLoader(abc.ABC, DataLoader):
-    @abc.abstractmethod
-    def read_uncompressed_file(self, file):
-        return file.read()
-
-    @abc.abstractmethod
-    def read_compressed_file(self, file):
-        return file.read().decode("ascii")
-
-    def load_from_local(self, filepath):
-        if ".gz" in filepath:
-            with gzip.open(filepath, "r") as fin:
-                save_data = self.read_compressed_file(fin)
-        else:
-            with open(filepath, "r") as fin:
-                save_data = self.read_uncompressed_file(fin)
-
-        return save_data
-
-    async def batch_load_fn(self, keys):
-        return [self.load_from_local(filepath) for filepath in keys]
-
-
-class LocalFileBlobDataLoader(AbstractLocalFileDataLoader):
-    def read_uncompressed_file(self, file):
-        return super().read_uncompressed_file(file)
-
-    def read_compressed_file(self, file):
-        return super().read_compressed_file(file)
-
-
-class LocalFileLinesDataLoader(AbstractLocalFileDataLoader):
-    def read_uncompressed_file(self, file):
-        lines = []
-        for line in file:
-            lines.append(line)
-
-        return lines
-
-    def read_compressed_file(self, file):
-        return self.read_uncompressed_file(file)
-
-
-class AbstractS3FileDataLoader(abc.ABC, DataLoader):
-    _s3 = None
-
-    @property
-    def s3(self):
-        if self._s3 is None:
-            self._s3 = boto3.resource("s3")
-
-        return self._s3
-
-    @abc.abstractmethod
-    def read_uncompressed_data(self, data):
-        return data.decode("ascii")
-
-    @abc.abstractmethod
-    def read_compressed_data(self, data):
-        uncompressed = gzip.decompress(data)
-        return uncompressed.decode("utf-8")
-
-    def load_from_s3(self, filepath):
-        # TODO - there must be some better way of parsing this?
-        path = filepath.replace("s3://", "").split("/")
-        bucket = path[0]
-        key = ("/".join(path[1:])).lstrip("/")
-
-        data = self.s3.Object(bucket, key).get()["Body"].read()
-
-        # TODO - there must be a better way of testing if a filepath is for a compressed/gzipped file...
-        if ".gz" in filepath:
-            save_data = self.read_compressed_data(data)
-        else:
-            save_data = self.read_uncompressed_data(data)
-
-        return save_data
-
-    async def batch_load_fn(self, keys):
-        return [self.load_from_s3(filepath) for filepath in keys]
-
-
-class S3FileBlobDataLoader(AbstractS3FileDataLoader):
-    def read_uncompressed_data(self, data):
-        return super().read_uncompressed_data(data)
-
-    def read_compressed_data(self, data):
-        return super().read_compressed_data(data)
-
-
-class S3FileLinesDataLoader(AbstractS3FileDataLoader):
-    def read_uncompressed_data(self, data):
-        filestring = data.decode("utf-8")
-        return filestring.splitlines(True)
-
-    def read_compressed_data(self, data):
-        filestring = gzip.decompress(data).decode("utf-8")
-        return filestring.splitlines(True)
-
-
-BlobDataLoader = TypeVar("BlobDataLoader", LocalFileBlobDataLoader, S3FileBlobDataLoader)
-
-
-class JSONBlobDataLoader(DataLoader, Generic[BlobDataLoader]):
-    blob_data_loader: BlobDataLoader
-
-    def __init__(self, blob_data_loader: BlobDataLoader, **kwargs):
-        super().__init__(**kwargs)
-        self.blob_data_loader = blob_data_loader
-
-    async def batch_load_fn(self, keys):
-        raw_datas = await self.blob_data_loader.load_many(keys)
-        # We expect each "blob" here to be well-formed JSON, so parse each of them thusly
-        return [json.loads(raw_data) for raw_data in raw_datas]
-
-
-LinesDataLoader = TypeVar("LinesDataLoader", LocalFileLinesDataLoader, S3FileLinesDataLoader)
-
-
-class JSONLinesDataLoader(DataLoader, Generic[LinesDataLoader]):
-    lines_data_loader: LinesDataLoader
-
-    def __init__(self, lines_data_loader: LinesDataLoader, **kwargs):
-        super().__init__(**kwargs)
-        self.lines_data_loader = lines_data_loader
-
-    async def batch_load_fn(self, keys):
-        raw_datas = await self.lines_data_loader.load_many(keys)
-        # TODO - comment
-        all_data = []
-        for data in raw_datas:
-            parsed_lines = []
-            for line in data:
-                parsed_lines.append(json.loads(line))
-
-            all_data.append(parsed_lines)
-
-        return all_data
-
-
 DataType = TypeVar("DataType")
 
 
@@ -324,15 +187,15 @@ class AbstractSparkApplicationDataLoader(abc.ABC, Generic[DataType], DataLoader)
         return [self.construct_spark_application(k) for k in raw_datas]
 
 
-class ParsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[dict], Generic[BlobDataLoader]):
+class ParsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[dict], Generic[RawJSONBlobDataLoader]):
     """
     Creates a SparkApplication from a parsed JSON representation of that application. Useful for re-hydrating
     parsed logs that were saved somewhere (or submitted directly to us)
     """
 
-    _json_data_loader: JSONBlobDataLoader[BlobDataLoader] = None
+    _json_data_loader: JSONBlobDataLoader[RawJSONBlobDataLoader] = None
 
-    def __init__(self, json_loader: JSONBlobDataLoader[BlobDataLoader], **kwargs):
+    def __init__(self, json_loader: JSONBlobDataLoader[RawJSONBlobDataLoader], **kwargs):
         super().__init__(**kwargs)
 
         self._json_data_loader = json_loader
@@ -433,16 +296,16 @@ class ParsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[dict], 
 
 
 class UnparsedLogSparkApplicationLoader(
-    AbstractSparkApplicationDataLoader[ApplicationModel], Generic[LinesDataLoader]
+    AbstractSparkApplicationDataLoader[ApplicationModel], Generic[RawJSONLinesDataLoader]
 ):
     """
     From a raw set of Spark log lines, constructs a SparkApplication
     """
-    _json_lines_loader: JSONLinesDataLoader[LinesDataLoader] = None
+    _json_lines_loader: JSONLinesDataLoader[RawJSONLinesDataLoader] = None
 
     def __init__(
         self,
-        json_lines_loader: JSONLinesDataLoader[LinesDataLoader],
+        json_lines_loader: JSONLinesDataLoader[RawJSONLinesDataLoader],
         stdout_path: str = None,
         debug: bool = False,
         **kwargs,
