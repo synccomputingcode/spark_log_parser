@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import ParseResult, urlparse
 
 import requests
+import boto3
 from pydantic import BaseModel
 
 
@@ -62,7 +63,8 @@ class Extractor:
 
     def _validate_s3_client(self, s3_client):
         if self.source_url.scheme == "s3" and s3_client is None:
-            raise ValueError("An S3 client is needed for S3 URLs")
+            return boto3.client("s3")
+            # raise ValueError("An S3 client is needed for S3 URLs")
 
         return s3_client
 

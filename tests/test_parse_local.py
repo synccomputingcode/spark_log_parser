@@ -111,6 +111,19 @@ def test_emr_missing_sql_events(parsed_files):
         assert sql_data.index.name == "sql_id"
         assert list(sql_data.index.values) == [0, 2, 3, 5, 6, 7, 8]
 
+@pytest.mark.parametrize("parsed_files",
+                         [(Path("tests", "logs", "databricks-rollover-messy.zip").resolve(), get_parsed_log)],
+                         indirect=["parsed_files"])
+def test_databricks_rollover(parsed_files):
+    # for file in parsed_files:
+    #     assert all(key in file for key in PARSED_KEYS), "Not all keys are present"
+    #     assert (
+    #         file["metadata"]["application_info"]["name"] == "Text Similarity"
+    #     ), "Name is as expected"
+
+    assert all(file == parsed_files[0] for file in
+               parsed_files[1:]), "Expected all parsed files to be the same, but they were not"
+
 
 def test_parsed_log():
     """

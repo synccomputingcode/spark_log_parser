@@ -19,17 +19,16 @@ def get_json(line):
 
 class ApplicationModel:
     """
-    Model for a spark application. A spark application consists of one or more jobs, which consists of one or more stages, which consists of one or more tasks.
+    Model for a spark application. A spark application consists of one or more jobs, which consists of one or more
+    stages, which consists of one or more tasks.
 
     Spark application parameters can be parsed from an event log.
 
     Using parts of the trace analyzer from Kay Ousterhout: https://github.com/kayousterhout/trace-analysis
-
     """
 
-    def __init__(self, log_lines, bucket=None, stdoutpath=None, debug=False):  # noqa: C901
+    def __init__(self, log_lines, stdoutpath=None, debug=False):  # noqa: C901
         # set default parameters
-        # self.eventlogpath = eventlogpath
         self.dag = DagModel()
         self.jobs: dict[JobModel] = collections.defaultdict(JobModel)
         self.stages: dict[StageModel] = collections.defaultdict(StageModel)
@@ -69,6 +68,11 @@ class ApplicationModel:
                 # spark_version_dict = {"spark_version": json_data["Spark Version"]}
                 self.spark_version = json_data["Spark Version"]
                 self.spark_metadata = {**self.spark_metadata}
+
+            elif event_type == "DBCEventLoggingListenerMetadata":
+                print("Rollover log detected...")
+                continue
+
             elif event_type == "SparkListenerJobStart":
                 job_id = json_data["Job ID"]
                 self.jobs[job_id].submission_time = json_data["Submission Time"] / 1000

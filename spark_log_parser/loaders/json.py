@@ -1,4 +1,5 @@
 import json
+from json import JSONDecodeError
 from typing import Generic, TypeVar
 
 from aiodataloader import DataLoader
@@ -21,7 +22,6 @@ class JSONBlobDataLoader(DataLoader, Generic[RawJSONBlobDataLoader]):
     async def batch_load_fn(self, keys):
         raw_datas = await self.blob_data_loader.load_many(keys)
         # We expect each "blob" here to be well-formed JSON, so parse each of them thusly
-        # TODO - streaming?
         return [json.loads(next(raw_data)) for raw_data in raw_datas]
 
 
@@ -35,19 +35,31 @@ class JSONLinesDataLoader(DataLoader, Generic[RawJSONLinesDataLoader]):
         super().__init__(**kwargs)
         self.lines_data_loader = lines_data_loader
 
+    def yield_json_lines(self, lines):
+        def generate():
+            for line in lines:
+                try:
+                    # print(line)
+                    yield json.loads(line)
+                except JSONDecodeError:
+                    continue
+
+        return generate()
+
     async def batch_load_fn(self, keys):
         raw_datas = await self.lines_data_loader.load_many(keys)
         # TODO - comment
         all_data = []
         for data in raw_datas:
-            parsed_lines = []
+            all_data.append(self.yield_json_lines(data))
+            # parsed_lines = []
             # print(data)
-            # TODO - make this streaming/a generator?
-            for line in data:
-                # print(line)
-                parsed_lines.append(json.loads(line))
-
-            all_data.append(parsed_lines)
+            # # TODO - make this streaming/a generator?
+            # for line in data:
+            #     print(line)
+            #     parsed_lines.append(json.loads(line))
+            #
+            # all_data.append(parsed_lines)
 
         return all_data
 

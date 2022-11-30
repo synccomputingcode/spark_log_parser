@@ -7,12 +7,12 @@ import boto3
 from pathlib import Path
 from urllib.parse import ParseResult, urlparse
 
-from spark_log_parser.loaders import AbstractFileDataLoader
+from spark_log_parser.loaders import AbstractFileDataLoader, AbstractBlobDataLoader, AbstractLinesDataLoader
 
 
-class AbstractS3FileDataLoader(AbstractFileDataLoader):
+class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
     """
-
+    Abstract class that supports loading files directly from S3
     """
 
     _s3 = None
@@ -20,26 +20,9 @@ class AbstractS3FileDataLoader(AbstractFileDataLoader):
     @property
     def s3(self):
         if self._s3 is None:
-            self._s3 = boto3.resource("s3")
+            self._s3 = boto3.client("s3")
 
         return self._s3
-
-    @abc.abstractmethod
-    def read_uncompressed_file(self, data):
-        return data.decode("ascii")
-
-    @abc.abstractmethod
-    def read_gz_file(self, data):
-        uncompressed = gzip.decompress(data)
-        return uncompressed.decode("utf-8")
-
-    @abc.abstractmethod
-    def read_tgz_archive(self, archive: tarfile.TarFile):
-        pass
-
-    @abc.abstractmethod
-    def read_zip_archive(self, archive: zipfile.ZipFile):
-        pass
 
     def load_item(self, filepath):
         """
@@ -70,7 +53,7 @@ class AbstractS3FileDataLoader(AbstractFileDataLoader):
                     raise AssertionError(f"Size limit exceeded while downloading from {filepath}.")
 
                 filename = content["Key"]
-                if not self._should_skip_file(filename):
+                if not self.should_skip_file(filename):
                     to_fetch.append(filename)
         else:
             raise AssertionError(f"No objects matching '{key}' in bucket: {bucket}")
@@ -81,35 +64,16 @@ class AbstractS3FileDataLoader(AbstractFileDataLoader):
         for filename in to_fetch:
             # Just append the botocore.response.StreamingBody so that extraction functions can operate on the stream
             # vs. loading all the files into memory
-            data = self.s3.Object(bucket, filename).get()["Body"]
+            data = self.s3.get_object(Bucket=bucket, Key=filename)["Body"]
             files.append(data)
 
-        if len(files) > 1:
-            for (filepath, filestream) in zip(to_fetch, files):
-                yield from self.extract(filepath, filestream)
-            # pass
-        else:
-            filepath = Path(to_fetch[0])
-            filestream = files[0]
-            yield from self.extract(filepath, filestream)
-
-        # return files[0] if len(files) > 1 else files
-        # return files
+        for (filepath, filestream) in zip(to_fetch, files):
+            yield from self.extract(Path(filepath), filestream)
 
 
-class S3FileBlobDataLoader(AbstractS3FileDataLoader):
-    def read_uncompressed_data(self, data):
-        return super().read_uncompressed_data(data)
-
-    def read_gzipped_data(self, data):
-        return super().read_gzipped_data(data)
+class S3FileBlobDataLoader(AbstractS3FileDataLoader, AbstractBlobDataLoader):
+    pass
 
 
-class S3FileLinesDataLoader(AbstractS3FileDataLoader):
-    def read_uncompressed_data(self, data):
-        filestring = data.decode("utf-8")
-        return filestring.splitlines(True)
-
-    def read_gzipped_data(self, data):
-        filestring = gzip.decompress(data).decode("utf-8")
-        return filestring.splitlines(True)
+class S3FileLinesDataLoader(AbstractS3FileDataLoader, AbstractLinesDataLoader):
+    pass
