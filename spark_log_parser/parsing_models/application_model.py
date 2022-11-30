@@ -10,6 +10,8 @@ from .dag_model import DagModel
 from .exceptions import UrgentEventValidationException
 from .executor_model import ExecutorModel
 from .job_model import JobModel
+from .stage_model import StageModel
+from .task_model import TaskModel
 
 
 def get_json(line):
@@ -32,11 +34,13 @@ class ApplicationModel:
         # set default parameters
         self.eventlogpath = eventlogpath
         self.dag = DagModel()
-        self.jobs = collections.defaultdict(JobModel)
+        self.jobs: dict[JobModel] = collections.defaultdict(JobModel)
+        self.stages: dict[StageModel] = collections.defaultdict(StageModel)
+        self.tasks: list[TaskModel] = []
         self.sql = collections.defaultdict(dict)
         self.accum_metrics = collections.defaultdict(dict)
-        self.executors = collections.defaultdict(ExecutorModel)
-        self.jobs_for_stage = {}
+        self.executors: dict[ExecutorModel] = collections.defaultdict(ExecutorModel)
+        self.jobs_for_stage = collections.defaultdict(list)
         self.num_executors = 0
         self.max_executors = 0
         self.executorRemovedEarly = False
@@ -58,7 +62,6 @@ class ApplicationModel:
         self.cluster_id = None
         self.spark_version = None
         self.emr_version_tag = None
-
 
         # if bucket is None, then files are in local directory, else read from s3
         # read event log
@@ -102,7 +105,7 @@ class ApplicationModel:
         if bucket is None:
             f.seek(0)
 
-        hosts = []
+        hosts = set()
 
         for line in f:
             if is_json:
@@ -112,6 +115,7 @@ class ApplicationModel:
                     # spark_version_dict = {"spark_version": json_data["Spark Version"]}
                     self.spark_version = json_data["Spark Version"]
                     self.spark_metadata = {**self.spark_metadata}
+
                 elif event_type == "SparkListenerJobStart":
 
                     job_id = json_data["Job ID"]
@@ -121,79 +125,51 @@ class ApplicationModel:
 
                     # print("Stage ids: %s" % stage_ids)
                     for stage_id in stage_ids:
-                        if stage_id not in self.jobs_for_stage:
-                            self.jobs_for_stage[stage_id] = [job_id]
-                        else:
-                            self.jobs_for_stage[stage_id].append(job_id)
+                        self.jobs_for_stage[stage_id].append(job_id)
 
                 elif event_type == "SparkListenerJobEnd":
                     job_id = json_data["Job ID"]
                     self.jobs[job_id].completion_time = json_data["Completion Time"] / 1000
                     self.jobs[job_id].result = json_data["Job Result"]["Result"]
+
                 elif event_type == "SparkListenerTaskEnd":
-                    stage_id = json_data["Stage ID"]
-                    # Add the event to all of the jobs that depend on the stage.
-                    for jid in self.jobs_for_stage[stage_id]:
-                        self.jobs[jid].add_event(json_data, True)
+                    if "Task Metrics" in json_data:
+                        task = TaskModel(json_data, True)
+                        self.tasks.append(task)
 
                 elif event_type == "SparkListenerStageSubmitted":
+                    stage_info = json_data["Stage Info"]
 
-                    # stages may not be executed exclusively from one job
-                    stage_id = json_data["Stage Info"]["Stage ID"]
-
-                    if (stage_id not in self.jobs_for_stage) and (not debug):
-                        raise UrgentEventValidationException(
-                            missing_event=f"Job Start for Stage {stage_id}"
-                        )
-
-                    if "Submission Time" not in json_data["Stage Info"]:
+                    if "Submission Time" not in stage_info:
                         # PROD-426 Submission Time key may be missing from stages that
                         # don't get submitted. There is usually a StageCompleted event
-                        # shortly after.
+                        # shortly after. This may happen when stages fail
                         continue
 
-                    for job_id in self.jobs_for_stage[stage_id]:
-                        self.jobs[job_id].stages[stage_id].submission_time = (
-                            json_data["Stage Info"]["Submission Time"] / 1000
-                        )
-                        self.jobs[job_id].stages[stage_id].stage_name = json_data["Stage Info"][
-                            "Stage Name"
-                        ]
-                        self.jobs[job_id].stages[stage_id].num_tasks = json_data["Stage Info"][
-                            "Number of Tasks"
-                        ]
-                        self.jobs[job_id].stages[stage_id].stage_info = json_data["Stage Info"]
+                    stage_id = stage_info["Stage ID"]
+                    attempt_id = stage_info["Stage Attempt ID"]
+                    stage = self.stages[stage_id]
+                    # Note - see StageModel.attempt_id for a description of why this logic is here.
+                    if stage.attempt_id is None or attempt_id >= stage.attempt_id:
+                        stage.id = stage_id
+                        stage.attempt_id = attempt_id
+                        stage.stage_info = stage_info
+                        stage.stage_name = stage_info["Stage Name"]
+                        stage.submission_time = stage_info["Submission Time"] / 1000
+                        stage.num_tasks = stage_info["Number of Tasks"]
 
                 elif event_type == "SparkListenerStageCompleted":
-
                     # stages may not be executed exclusively from one job
-                    stage_id = json_data["Stage Info"]["Stage ID"]
-                    self.finish_time = json_data["Stage Info"]["Completion Time"] / 1000
+                    stage_info = json_data["Stage Info"]
+                    stage_id = stage_info["Stage ID"]
+                    stage_completion_time = stage_info["Completion Time"] / 1000
 
-                    for job_id in self.jobs_for_stage[stage_id]:
-                        self.jobs[job_id].stages[stage_id].completion_time = (
-                            json_data["Stage Info"]["Completion Time"] / 1000
-                        )
-
-                    # SPC-213 This fixes the case where a job submission occurs after a related
-                    # stage submission. This should only happen if a stage belongs to two jobs
-                    job_id_with_valid_stage = None
-                    for job_id in self.jobs_for_stage[stage_id]:
-                        if hasattr(self.jobs[job_id].stages[stage_id], "submission_time"):
-                            job_id_with_valid_stage = job_id
-                            break
-
-                    # Make sure job-data for each job-id associated with this stage-id contains the
-                    # valid stage data
-                    for job_id in self.jobs_for_stage[stage_id]:
-                        self.jobs[job_id].stages[stage_id] = self.jobs[
-                            job_id_with_valid_stage
-                        ].stages[stage_id]
-
-                    if (job_id_with_valid_stage is None) and (not debug):
-                        raise UrgentEventValidationException(
-                            missing_event=f"Stage {stage_id} Submit"
-                        )
+                    stage = self.stages[stage_id]
+                    attempt_id = stage_info["Stage Attempt ID"]
+                    # Note - see StageModel.attempt_id for a description of why this logic is here.
+                    if stage.attempt_id is None or attempt_id >= stage.attempt_id:
+                        stage.completion_time = stage_completion_time
+                        self.maybe_set_new_finish_time(stage_completion_time)
 
                 elif event_type == "SparkListenerEnvironmentUpdate":
 
@@ -201,10 +177,14 @@ class ApplicationModel:
                     event_keys = spark_properties.keys()
 
                     # This if is specifically for databricks logs
-                    if spark_version := spark_properties.get("spark.databricks.clusterUsageTags.sparkVersion"):
+                    if spark_version := spark_properties.get(
+                        "spark.databricks.clusterUsageTags.sparkVersion"
+                    ):
                         self.cloud_platform = "databricks"
                         self.spark_version = spark_version
-                        self.cluster_id = spark_properties["spark.databricks.clusterUsageTags.clusterId"]
+                        self.cluster_id = spark_properties[
+                            "spark.databricks.clusterUsageTags.clusterId"
+                        ]
                         self.cloud_provider = spark_properties[
                             "spark.databricks.clusterUsageTags.cloudProvider"
                         ].lower()
@@ -226,13 +206,9 @@ class ApplicationModel:
                     # if 'spark.executor.instances' in event_keys:
                     #     self.num_executors = int(spark_properties["spark.executor.instances"])
                     if "spark.default.parallelism" in event_keys:
-                        self.parallelism = int(
-                            spark_properties["spark.default.parallelism"]
-                        )
+                        self.parallelism = int(spark_properties["spark.default.parallelism"])
                     if "spark.executor.memory" in event_keys:
-                        self.memory_per_executor = spark_properties[
-                            "spark.executor.memory"
-                        ]
+                        self.memory_per_executor = spark_properties["spark.executor.memory"]
                     # if 'spark.executor.cores' in event_keys:
                     #    self.cores_per_executor = int(spark_properties["spark.executor.cores"])
                     if "spark.sql.shuffle.partitions" in event_keys:
@@ -241,29 +217,39 @@ class ApplicationModel:
                         )
 
                 elif event_type == "SparkListenerExecutorAdded":
-                    hosts.append(json_data["Executor Info"]["Host"])
-                    self.cores_per_executor = int(json_data["Executor Info"]["Total Cores"])
-                    self.num_executors = self.num_executors + 1
+                    executor_id = json_data["Executor ID"]
+                    executor_info = json_data["Executor Info"]
+
+                    executor = self.executors[executor_id]
+                    executor.id = executor_id
+                    executor.start_time = json_data["Timestamp"]
+                    executor.host = executor_info["Host"]
+                    executor.cores = int(executor_info["Total Cores"])
+
+                    hosts.add(executor.host)
+
+                    # TODO - what happens if we receive multiple of these events and they have different
+                    #  amounts of cores?
+                    self.cores_per_executor = executor.cores
+                    self.num_executors += 1
                     self.max_executors = max(self.num_executors, self.max_executors)
-                    self.executors[json_data["Executor ID"]] = ExecutorModel(json_data)
-                    self.executors[json_data["Executor ID"]].removed_reason = ""
 
                 # So far logs I've looked at only explicitly remove Executors when there is a problem like
                 # lost worker. Use this to flag premature executor removal
                 elif event_type == "SparkListenerExecutorRemoved":
                     self.executorRemovedEarly = True
                     self.num_executors = self.num_executors - 1
-                    self.executors[json_data["Executor ID"]].end_time = json_data["Timestamp"]
-                    self.executors[json_data["Executor ID"]].removed_reason = json_data[
-                        "Removed Reason"
-                    ]
+
+                    executor = self.executors[json_data["Executor ID"]]
+                    executor.end_time = json_data["Timestamp"]
+                    executor.removed_reason = json_data["Removed Reason"]
 
                 elif event_type == "SparkListenerApplicationStart":
                     self.start_time = json_data["Timestamp"] / 1000
                     self.app_name = json_data["App Name"]
 
                 elif event_type == "SparkListenerApplicationEnd":
-                    self.finish_time = json_data["Timestamp"] / 1000
+                    self.maybe_set_new_finish_time(json_data["Timestamp"] / 1000)
 
                 elif (
                     event_type == "org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart"
@@ -276,8 +262,9 @@ class ApplicationModel:
 
                 elif event_type == "org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd":
                     sql_id = json_data["executionId"]
-                    self.sql[sql_id]["end_time"] = json_data["time"] / 1000
-                    self.finish_time = json_data["time"] / 1000
+                    end_time = json_data["time"] / 1000
+                    self.sql[sql_id]["end_time"] = end_time
+                    self.maybe_set_new_finish_time(end_time)
 
                 elif (
                     event_type
@@ -329,15 +316,43 @@ class ApplicationModel:
         self.num_instances = len(numpy.unique(hosts))
         self.executors_per_instance = numpy.ceil(self.num_executors / self.num_instances)
 
-        # print("Finished reading input data:")
+        for task in self.tasks:
+            stage_id = task.stage_id
+            stage = self.stages[stage_id]
+            stage.add_task(task)
+
+        for stage_id, stage in self.stages.items():
+            if stage.submission_time is None:
+                raise UrgentEventValidationException(missing_event=f"Stage {stage_id} Submit")
+
+            job_ids_for_stage = self.jobs_for_stage.get(stage_id)
+            if (not job_ids_for_stage) and (not debug):
+                # If this stage is not associated with any particular job, that likely means we are missing some data
+                raise UrgentEventValidationException(
+                    missing_event=f"Job Start for Stage {stage_id}"
+                )
+
+            for job_id in job_ids_for_stage:
+                self.jobs[job_id].stages[stage_id] = stage
+
+            stage.finalize_tasks()
+
         for job_id, job in self.jobs.items():
             job.initialize_job()
-            # print("Job", job_id, " has stages: ", job.stages.keys())
 
     def output_all_job_info(self):
         for job_id, job in self.jobs.items():
             features_filename = f"{os.path.dirname(self.eventlogpath)}/e{self.num_executors}_p{self.parallelism}_mem{self.memory_per_executor}_job{job_id}"
             job.write_features(features_filename)
+
+    def maybe_set_new_finish_time(self, new_finish_time: int):
+        """
+        As we read log lines, we want to mark the 'latest' finish_time we have seen. This may come from a few different
+        events, since there is no single event that is guaranteed to be present in the log from which we can determine
+        the application's finish_time
+        """
+        if not self.finish_time or new_finish_time > self.finish_time:
+            self.finish_time = new_finish_time
 
     def plot_task_runtime_distribution(self):
         """
