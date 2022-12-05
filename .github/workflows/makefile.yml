@@ -26,12 +26,9 @@ jobs:
 
       - name: Install dependencies
         run: flit install
-        
+
       - name: Lint
         run: make lint
-        
-      - name: Format
-        run: make tidy
         
       - name: Test with pytest
         run: make test
