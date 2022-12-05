@@ -130,7 +130,6 @@ class ApplicationModel:
             elif event_type == "SparkListenerEnvironmentUpdate":
 
                 spark_properties = json_data["Spark Properties"]
-                event_keys = spark_properties.keys()
 
                 # This if is specifically for databricks logs
                 if spark_version := spark_properties.get(
@@ -151,26 +150,6 @@ class ApplicationModel:
                     self.emr_version_tag = json_data["System Properties"]["EMR_RELEASE_LABEL"]
 
                 self.spark_metadata = {**self.spark_metadata, **spark_properties}
-
-                ##################################
-                # Note to predictor team:
-                # Keeping these for now so nothing breaks, but adding transferring the entire Spark Properties dictionary above
-                # so we can see what has been set and don't have to manually grab every property. Should be able to remove the
-                # section below once we make minor tweaks to predictor.
-                ##################################
-
-                # if 'spark.executor.instances' in event_keys:
-                #     self.num_executors = int(spark_properties["spark.executor.instances"])
-                if "spark.default.parallelism" in event_keys:
-                    self.parallelism = int(spark_properties["spark.default.parallelism"])
-                if "spark.executor.memory" in event_keys:
-                    self.memory_per_executor = spark_properties["spark.executor.memory"]
-                # if 'spark.executor.cores' in event_keys:
-                #    self.cores_per_executor = int(spark_properties["spark.executor.cores"])
-                if "spark.sql.shuffle.partitions" in event_keys:
-                    self.shuffle_partitions = int(
-                        spark_properties["spark.sql.shuffle.partitions"]
-                    )
 
             elif event_type == "SparkListenerExecutorAdded":
                 executor_id = json_data["Executor ID"]
@@ -203,7 +182,6 @@ class ApplicationModel:
             elif event_type == "SparkListenerEnvironmentUpdate":
 
                 spark_properties = json_data["Spark Properties"]
-                event_keys = spark_properties.keys()
 
                 # This if is specifically for databricks logs
                 if spark_version := spark_properties.get(
@@ -230,18 +208,6 @@ class ApplicationModel:
                 end_time = json_data["time"] / 1000
                 self.sql[sql_id]["end_time"] = end_time
                 self.maybe_set_new_finish_time(end_time)
-
-
-                # if 'spark.executor.instances' in event_keys:
-                #     self.num_executors = int(spark_properties["spark.executor.instances"])
-                if "spark.default.parallelism" in event_keys:
-                    self.parallelism = int(spark_properties["spark.default.parallelism"])
-                if "spark.executor.memory" in event_keys:
-                    self.memory_per_executor = spark_properties["spark.executor.memory"]
-                # if 'spark.executor.cores' in event_keys:
-                #    self.cores_per_executor = int(spark_properties["spark.executor.cores"])
-                if "spark.sql.shuffle.partitions" in event_keys:
-                    self.shuffle_partitions = int(spark_properties["spark.sql.shuffle.partitions"])
 
             elif event_type == "SparkListenerExecutorAdded":
                 hosts.append(json_data["Executor Info"]["Host"])
@@ -344,11 +310,6 @@ class ApplicationModel:
 
         for job_id, job in self.jobs.items():
             job.initialize_job()
-
-    def output_all_job_info(self):
-        for job_id, job in self.jobs.items():
-            features_filename = f"{os.path.dirname(self.eventlogpath)}/e{self.num_executors}_p{self.parallelism}_mem{self.memory_per_executor}_job{job_id}"
-            job.write_features(features_filename)
 
     def maybe_set_new_finish_time(self, new_finish_time: int):
         """
