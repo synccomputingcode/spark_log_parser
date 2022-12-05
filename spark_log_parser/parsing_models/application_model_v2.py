@@ -1,5 +1,6 @@
 import abc
 import asyncio
+import collections
 import gzip
 import json
 import logging
@@ -7,6 +8,8 @@ import os
 import time
 from collections import defaultdict
 from typing import Generic, TypeVar
+
+from pprint import pprint
 
 import boto3
 import numpy as np
@@ -825,7 +828,10 @@ class UnparsedLogSparkApplicationLoader(
         t1 = time.time()
 
         df = (
-            pd.DataFrame(app_model.accum_metrics).transpose()
+            # app_model.accum_metrics
+            # pd.DataFrame(app_model.accum_metrics.values(), sorted(app_model.accum_metrics.keys()))
+            pd.DataFrame(app_model.accum_metrics)
+            .transpose()
             # only driver accum values are updated
             .dropna()
         )

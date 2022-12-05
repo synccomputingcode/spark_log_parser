@@ -3,8 +3,11 @@ import zipfile
 import tarfile
 import os.path
 from pathlib import Path
+from pprint import pprint, pformat
 
 import pytest
+
+from deepdiff import DeepDiff
 
 from spark_log_parser.parsing_models.application_model_v2 import create_spark_application, SparkApplication
 
@@ -16,6 +19,10 @@ PARSED_KEYS = [
     "sqlData",
     "stageData",
     "taskData",
+]
+
+UNORDERED_PARSED_KEYS = [
+    # "accumData"
 ]
 
 
@@ -121,8 +128,40 @@ def test_databricks_rollover(parsed_files):
     #         file["metadata"]["application_info"]["name"] == "Text Similarity"
     #     ), "Name is as expected"
 
-    assert all(file == parsed_files[0] for file in
-               parsed_files[1:]), "Expected all parsed files to be the same, but they were not"
+    [first, *rest] = parsed_files
+    for curr in rest:
+        for key, curr_value in curr.items():
+            first_value = first[key]
+
+            if curr_value == first_value:
+                continue
+
+            diff = DeepDiff(curr_value, first_value)
+            if diff:
+                diff_ignoring_order = DeepDiff(curr_value, first_value, ignore_order=True)
+
+            if diff and not diff_ignoring_order and key not in UNORDERED_PARSED_KEYS:
+                raise ValueError(f"Detected an ordering difference for key: {key} in parsed log files\n" +
+                                 f"If this is expected, please update UNORDERED_PARSED_KEYS. Otherwise, please " +
+                                 "fix this diff\n"
+                                 f"{pformat(diff)}")
+
+            if diff and diff_ignoring_order:
+                raise ValueError(f"Detected a difference not due to ordering for key: {key} in parsed log files\n" +
+                                 f"{pformat(diff)}")
+
+
+            # diff = DeepDiff(curr_value, first_value, ignore_order=True)
+            # if key == "accumData":
+            # else:
+            #     diff = DeepDiff(curr_value, first_value)
+            # pprint(diff)
+
+            # assert not diff, f"Expected no diff for values of serialized SparkApplications, but key: {key} had diffs"
+
+        # diff = DeepDiff(first_file, file)
+        # pprint(diff)
+        # assert curr == first, f"Expected all parsed files to be the same, but they were not."
 
 
 def test_parsed_log():
