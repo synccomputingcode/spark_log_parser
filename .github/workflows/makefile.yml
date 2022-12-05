@@ -1,0 +1,34 @@
+name: Makefile CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python 3.10.3
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.10.3" # unfortunately we can't read from a file here, otherwise runtime.txt would be used
+
+      - name: Install dependencies
+        run: pip install -e .
+        
+      - name: Lint
+        run: make lint
+        
+      - name: Format
+        run: make tidy
+        
+      - name: Test with pytest
+        run: make test
