@@ -11,8 +11,8 @@ lint:
 .PHONY: format
 format:
 ifneq ("$(FILES)","")
-	black $(FILES) $(args)
-	isort $(FILES) --line-length 100 --profile black
+	black $(FILES)
+	isort $(FILES)
 endif
 
 .PHONY: tidy
