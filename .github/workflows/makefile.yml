@@ -21,8 +21,11 @@ jobs:
         with:
           python-version: "3.10.3" # unfortunately we can't read from a file here, otherwise runtime.txt would be used
 
+      - name: Install Flit
+        run: python3 -m pip install flit
+
       - name: Install dependencies
-        run: pip install -e .
+        run: flit install
         
       - name: Lint
         run: make lint
