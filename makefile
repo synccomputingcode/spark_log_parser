@@ -1,6 +1,5 @@
 FILES := $(shell git diff --name-only --diff-filter=AM $$(git merge-base origin/main HEAD) -- \*.py)
 
-
 .PHONY: test
 test:
 	pytest
@@ -11,9 +10,9 @@ lint:
 
 .PHONY: format
 format:
-ifneq ("$(FILES)"," ")
-	black $(FILES)
-	isort $(FILES)
+ifneq ("$(FILES)","")
+	black $(FILES) $(args)
+	isort $(FILES) --line-length 100 --profile black
 endif
 
 .PHONY: tidy
