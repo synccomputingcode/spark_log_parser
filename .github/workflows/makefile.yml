@@ -1,0 +1,29 @@
+name: Makefile CI
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-20.04
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python 3.10.3
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.10.3" # unfortunately we can't read from a file here
+
+      - name: Install dependencies
+        run: pip install '.[test]'
+
+      - name: Lint
+        run: make lint
+        
+      - name: Test with pytest
+        run: make test
