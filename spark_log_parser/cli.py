@@ -2,7 +2,6 @@ import argparse
 import logging
 import sys
 import tempfile
-import json
 import shutil
 from pathlib import Path
 from urllib.parse import unquote
