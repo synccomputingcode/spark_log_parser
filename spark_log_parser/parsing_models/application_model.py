@@ -11,12 +11,6 @@ from .stage_model import StageModel
 from .task_model import TaskModel
 
 
-def get_json(line):
-    # Need to first strip the trailing newline, and then escape newlines (which can appear
-    # in the middle of some of the JSON) so that JSON library doesn't barf.
-    return line
-
-
 class ApplicationModel:
     """
     Model for a spark application. A spark application consists of one or more jobs, which consists of one or more
@@ -62,9 +56,13 @@ class ApplicationModel:
         hosts = set()
         rollover_log_numbers_seen: set[int] = set()
 
-        for line in log_lines:
-            json_data = get_json(line)
-            event_type = json_data["Event"]
+        for json_data in log_lines:
+            event_type = json_data.get("Event")
+            # When clients upload archives to us, it is possible that we get valid JSON files in that archive that look
+            # like eventlog log lines, but are actually not
+            if not event_type:
+                continue
+
             if event_type == "SparkListenerLogStart":
                 # spark_version_dict = {"spark_version": json_data["Spark Version"]}
                 self.spark_version = json_data["Spark Version"]

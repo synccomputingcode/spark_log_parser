@@ -5,21 +5,24 @@ import tarfile
 
 from io import IOBase, BytesIO, BufferedIOBase
 from pathlib import Path
+from types import coroutine
 from urllib.parse import ParseResult
 
 from aiodataloader import DataLoader
+from memory_profiler import profile
 from stream_unzip import stream_unzip
 
 FILE_SKIP_PATTERNS = [".DS_Store".lower(), "__MACOSX".lower(), "/."]
 
 
-class ZipArchiveMemberWrapper:
+class FileChunkStreamWrapper:
     """
-    Minimal file-like wrapper to wrap the output of stream_unzip. This allows a streaming-compatible method of
-    unzipping .zip archives, which zipfile.ZipFile does not support.
+    Minimal file-like wrapper to wrap the output of file streams that may be lacking methods like read/readlines (or in
+    other words, file streams that are raw generators). This allows us to wrap things like the output of `stream_unzip`
+    or botocore.StreamingBody.iter_lines() and pass those streams around as file-like objects.
 
     Note - this wrapper does not implement the full file-like object API. Instead, it only implements at the moment
-        those methods that are actually called when loading .zip archives in various contexts. This doesn't mean that
+        those methods that are actually called when loading files in various contexts. This doesn't mean that
         new methods won't need to be implemented in the future as use-cases grow, it just means that at the moment
         this minimal implementation satisfies the current use-cases we do have
 
@@ -27,22 +30,30 @@ class ZipArchiveMemberWrapper:
     """
 
     _trailing_data: bytes = None
+    _chunks = None
 
     def __init__(self, chunks):
-        self.chunks = chunks
+        assert chunks
+        self._chunks = chunks
+
+    def __iter__(self):
+        """
+        The implementation of
+        """
+        return self.readlines()
 
     def read(self, size=-1):
-        # If we have leftover data from prior reads, use that. Otherwise, we assume that the underlying `chunk`s from
-        # our zip archive stream are raw bytes
+        # If we have leftover data from prior reads, use that. Otherwise, we assume that the underlying `chunk`s will
+        #  be raw byte strings
         content = self._trailing_data if self._trailing_data is not None else b''
         self._trailing_data = None
 
         if not size or size == -1:
-            for chunk in self.chunks:
+            for chunk in self._chunks:
                 content += chunk
         else:
             # iterate chunks until we've read at least `size` amount of data
-            for chunk in self.chunks:
+            for chunk in self._chunks:
                 content += chunk
                 if len(content) >= size:
                     break
@@ -55,9 +66,13 @@ class ZipArchiveMemberWrapper:
         return content
 
     def readlines(self):
+        """
+        Returns a stream of lines from self.chunks. This differs from many readlines() implementations, which tend to
+        read the whole file into memory and return a list of the lines
+        """
         pending = None
 
-        for chunk in self.chunks:
+        for chunk in self._chunks:
 
             if pending is not None:
                 chunk = pending + chunk
@@ -79,9 +94,13 @@ class ZipArchiveMemberWrapper:
             yield pending
 
 
+class ZipArchiveMemberWrapper(FileChunkStreamWrapper):
+    pass
+
+
 class AbstractFileDataLoader(abc.ABC, DataLoader):
     """
-    Base class for loading file over various transport mechanisms. This commits to streaming file data as much as
+    Base class for loading files over various transport mechanisms. This commits to streaming file data as much as
     possible, so that we are not holding on to full representations of large files in-memory. This means that any
     subclasses which are overriding any of the abstract methods of this class should conform to this commitment
     and make sure that their implementations are streaming-compatible as well. As a concrete example, any
@@ -97,6 +116,8 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
         - no file extension
     As well as some combinations of those extensions, i.e. .json.gz for gzipped JSON files.
     """
+
+    cache = False
 
     @staticmethod
     def should_skip_file(filename: str) -> bool:
@@ -142,7 +163,7 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
             if should_skip:
                 # We still need to exhaust the chunks for this part of the archive in order to
                 #  be able to consume the stream for the next part! If we don't do this, stream_unzip
-                #  will raise an UnfinishedIterationError
+                #  will raise an UnfinishedIterationError, since we can't just skip ahead
                 for _ in chunks:
                     continue
                 continue
@@ -192,11 +213,13 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
         match filepath.suffixes:
             case [".tgz"] | [".tar", ".gz"]:
                 print(f"Unpacking gzipped tarball: {filepath}")
-                with tarfile.open(filepath, "r:gz", file_stream) as tgz:
+                # Note - `r|gz` means that the filepath is processed as a stream of blocks, and as such
+                # does not allow seeking. See - https://docs.python.org/3.10/library/tarfile.html#tarfile.open
+                with tarfile.open(filepath, "r|gz", file_stream) as tgz:
                     yield from self.read_tgz_archive(tgz)
 
             case [".zip"]:
-                print(f"Unpacking .zip archive: {filepath}")
+                print(f"Unpacking .zip archive: {filepath} from stream: {file_stream}")
                 if file_stream:
                     yield from self.read_zip_archive(file_stream)
 
@@ -222,11 +245,11 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
 
             # If the Path is not a directory and has no suffix, it will match []
             case [".json"] | [".log"] | []:
-                print(f"Yielding raw file: {filepath}")
+                print(f"Yielding raw file: {filepath}, from stream: {to_open}")
                 if file_stream:
                     yield from self.read_uncompressed_file(file_stream)
                 else:
-                    with open(to_open, "rb", encoding="utf-8") as file:
+                    with open(to_open, "rb") as file:
                         yield from self.read_uncompressed_file(file)
 
             case _:
@@ -242,6 +265,8 @@ class AbstractBlobDataLoader(AbstractFileDataLoader, abc.ABC):
     Abstract class that implements the various read_* methods from AbstractFileDataLoader in such a way
     as to yield full "blobs" of data from the underlying file source. Useful for loading e.g. JSON files
     """
+
+    cache = False
 
     def read_tgz_archive(self, archive):
         yield from super().read_tgz_archive(archive)
@@ -262,6 +287,8 @@ class AbstractLinesDataLoader(AbstractFileDataLoader, abc.ABC):
     as to yield individual lines of the underlying file source. Useful for loading e.g. JSON Lines or CSV files
     """
 
+    cache = False
+
     def read_tgz_archive(self, archive):
         yield from super().read_tgz_archive(archive)
 
@@ -269,7 +296,9 @@ class AbstractLinesDataLoader(AbstractFileDataLoader, abc.ABC):
         yield from super().read_zip_archive(archive)
 
     def read_gz_file(self, file):
-        yield from file.readlines()
+        for line in file:
+            yield line
 
     def read_uncompressed_file(self, file):
-        yield from file.readlines()
+        for line in file:
+            yield line

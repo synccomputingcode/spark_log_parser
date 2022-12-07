@@ -103,7 +103,8 @@ def parsed_files(request) -> list[dict | SparkApplication]:
             tgz_archives.append(parsed)
         finally:
             # We have the parsed, in-memory representation - that means we can remove the file we generated on disk
-            # and return only the parsed app to the test
+            #  and return only the parsed app to the test. We put this in a `finally` block so that the temp file
+            #  on disk is always removed
             filepath.unlink(missing_ok=True)
 
     return [parsed_zip, *tgz_archives]

@@ -14,10 +14,19 @@ def get_parsed_log(event_log_path):
     return get_spark_app_from_raw_log(event_log_path).to_dict()
 
 
+def test_simple_databricks_log():
+    path = Path("tests", "logs", "databricks.json").resolve()
+    parsed_app = get_parsed_log(path)
+    assert all(key in parsed_app for key in PARSED_KEYS), "Not all keys are present"
+    assert (
+        parsed_app["metadata"]["application_info"]["name"] == "Databricks Shell"
+    ), "Name is as expected"
+
+
 @pytest.mark.parametrize("parsed_files",
                          [(Path("tests", "logs", "databricks.zip").resolve(), get_parsed_log)],
                          indirect=["parsed_files"])
-def test_simple_databricks_log(parsed_files):
+def test_simple_databricks_archive(parsed_files):
     for file in parsed_files:
         assert all(key in file for key in PARSED_KEYS), "Not all keys are present"
         assert (
@@ -52,6 +61,7 @@ def test_emr_missing_sql_events(parsed_files):
         sql_data = spark_app.sqlData
         assert sql_data.index.name == "sql_id"
         assert list(sql_data.index.values) == [0, 2, 3, 5, 6, 7, 8]
+
 
 @pytest.mark.parametrize("parsed_files",
                          [(Path("tests", "logs", "databricks-rollover-messy.zip").resolve(), get_parsed_log)],
