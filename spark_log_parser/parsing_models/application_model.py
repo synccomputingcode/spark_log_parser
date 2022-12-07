@@ -4,7 +4,7 @@ import os
 import numpy
 
 from .dag_model import DagModel
-from .exceptions import UrgentEventValidationException
+from .exceptions import UrgentEventValidationException, LogSubmissionException
 from .executor_model import ExecutorModel
 from .job_model import JobModel
 from .stage_model import StageModel
@@ -60,6 +60,7 @@ class ApplicationModel:
         self.emr_version_tag = None
 
         hosts = set()
+        rollover_log_numbers_seen: set[int] = set()
 
         for line in log_lines:
             json_data = get_json(line)
@@ -71,6 +72,7 @@ class ApplicationModel:
 
             elif event_type == "DBCEventLoggingListenerMetadata":
                 print("Rollover log detected...")
+                rollover_log_numbers_seen.add(json_data["Rollover Number"])
                 continue
 
             elif event_type == "SparkListenerJobStart":
@@ -286,6 +288,15 @@ class ApplicationModel:
 
         self.num_instances = len(numpy.unique(hosts))
         self.executors_per_instance = numpy.ceil(self.num_executors / self.num_instances)
+
+        if rollover_log_numbers_seen:
+            max_rollover = max(rollover_log_numbers_seen)
+            expected_rollover_log_numbers_seen = set(range(max_rollover))
+            if expected_rollover_log_numbers_seen.difference(rollover_log_numbers_seen):
+                raise LogSubmissionException(
+                    error_message=("Rollover logs were detected, but there were fewer than expected. " +
+                                   f"Expected to receive rollover numbers {', '.join(rollover_log_numbers_seen)} ")
+                )
 
         for task in self.tasks:
             stage_id = task.stage_id

@@ -1,6 +1,5 @@
 import abc
 import asyncio
-import collections
 import gzip
 import json
 import logging
@@ -8,8 +7,6 @@ import os
 import time
 from collections import defaultdict
 from typing import Generic, TypeVar
-
-from pprint import pprint
 
 import boto3
 import numpy as np
