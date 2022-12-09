@@ -41,6 +41,9 @@ class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
     """
 
     _s3 = None
+    
+    def __init__(self):
+        super().__init__()
 
     @property
     def s3(self):
@@ -103,3 +106,4 @@ class S3FileBlobDataLoader(AbstractS3FileDataLoader, AbstractBlobDataLoader):
 
 class S3FileLinesDataLoader(AbstractS3FileDataLoader, AbstractLinesDataLoader):
     pass
+    

@@ -133,7 +133,6 @@ class TaskModel:
         self.remote_blocks_read = shuffle_read_metrics["Remote Blocks Fetched"]
         self.remote_mb_read = shuffle_read_metrics["Remote Bytes Read"] / 1048576.0
         # if self.remote_mb_read > 0:
-        #   print(f'remote mb read: {self.remote_mb_read}')
 
         self.local_mb_read = 0
         LOCAL_BYTES_READ_KEY = "Local Bytes Read"
@@ -147,7 +146,6 @@ class TaskModel:
             self.local_read_time = shuffle_read_metrics[LOCAL_READ_TIME_KEY] / 1000  # [s]
         self.total_time_fetching = shuffle_read_metrics["Fetch Wait Time"] / 1000  # [s]
         # if self.total_time_fetching > 0:
-        #   print(f'shuffle wait time: {self.total_time_fetching}')
         if task_executor_metrics is not None:
             self.jvm_heap_memory = task_executor_metrics["JVMHeapMemory"]
             self.jvm_offheap_memory = task_executor_metrics["JVMOffHeapMemory"]

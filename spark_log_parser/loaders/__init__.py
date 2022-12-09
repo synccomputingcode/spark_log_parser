@@ -1,7 +1,7 @@
 import abc
 import gzip
-import zipfile
 import tarfile
+import logging
 
 from io import IOBase, BufferedIOBase
 from pathlib import Path
@@ -116,6 +116,12 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
     """
 
     cache = False
+    logger = None
+
+    def __init__(self):
+        super().__init__()
+        # Get a logger with the name of the concrete class
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     @staticmethod
     def should_skip_file(filename: str) -> bool:
@@ -208,14 +214,14 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
 
         match filepath.suffixes:
             case [".tgz"] | [".tar", ".gz"]:
-                print(f"Unpacking gzipped tarball: {filepath}")
+                self.logger.info(f"Unpacking gzipped tarball: {filepath}")
                 # Note - `r|gz` means that the filepath is processed as a stream of blocks, and as such
                 # does not allow seeking. See - https://docs.python.org/3.10/library/tarfile.html#tarfile.open
                 with tarfile.open(filepath, "r|gz", file_stream) as tgz:
                     yield from self.read_tgz_archive(tgz)
 
             case [".zip"]:
-                print(f"Unpacking .zip archive: {filepath} from stream: {file_stream}")
+                self.logger.info(f"Unpacking .zip archive: {filepath} from stream: {file_stream}")
                 if file_stream:
                     yield from self.read_zip_archive(file_stream)
 
@@ -230,7 +236,7 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
                         yield from self.read_zip_archive(file_stream)
 
             case [*suffixes] if (len(suffixes) > 0 and suffixes[-1] == ".gz"):
-                print(f"Processing gzipped file: {filepath}")
+                self.logger.info(f"Processing gzipped file: {filepath}")
                 with gzip.open(to_open) as file:
                     # We may see files like {name}.zip.gz/.json.gz, so make sure we handle that appropriately
                     if len(suffixes) == 1:
@@ -241,7 +247,7 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
 
             # If the Path is not a directory and has no suffix, it will match []
             case [".json"] | [".log"] | []:
-                print(f"Yielding raw file: {filepath}, from stream: {to_open}")
+                self.logger.info(f"Yielding raw file: {filepath}, from stream: {to_open}")
                 if file_stream:
                     yield from self.read_uncompressed_file(file_stream)
                 else:

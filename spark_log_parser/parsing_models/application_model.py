@@ -78,7 +78,6 @@ class ApplicationModel:
                 # Avoid using "Stage Infos" here, which was added in 1.2.0.
                 stage_ids = json_data["Stage IDs"]
 
-                # print("Stage ids: %s" % stage_ids)
                 for stage_id in stage_ids:
                     self.jobs_for_stage[stage_id].append(job_id)
 

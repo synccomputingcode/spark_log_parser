@@ -432,7 +432,6 @@ class UnparsedLogSparkApplicationLoader(
             if executor.end_time is not None:
                 end_time = executor.end_time / 1000 - app_model.start_time
             else:
-                # print('None detected')
                 end_time = executor.end_time
 
             df["executor_id"].append(xid)

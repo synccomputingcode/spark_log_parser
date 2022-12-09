@@ -2,12 +2,16 @@ import tempfile
 import zipfile
 import tarfile
 import os.path
+import logging
 import pytest
 from pathlib import Path
 from pprint import pformat
 from deepdiff import DeepDiff
 
 from spark_log_parser.parsing_models.application_model_v2 import SparkApplication
+
+logging.basicConfig()
+logging.root.setLevel(logging.INFO)
 
 # All the top-level keys that we would expect to be present in the JSON representation of a parsed SparkApplication
 PARSED_KEYS = [
