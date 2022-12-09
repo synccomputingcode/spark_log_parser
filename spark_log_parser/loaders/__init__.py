@@ -27,7 +27,7 @@ class FileChunkStreamWrapper:
     Note #2 - once `chunks` is consumed, calls to read/lines will return empty byte buffers
     """
 
-    _trailing_data: bytes = None
+    _trailing_data: bytes = b''
     _chunks = None
 
     def __init__(self, chunks):
@@ -41,10 +41,8 @@ class FileChunkStreamWrapper:
         return self.readlines()
 
     def read(self, size=-1):
-        # If we have leftover data from prior reads, use that. Otherwise, we assume that the underlying `chunk`s will
-        #  be raw byte strings
-        content = self._trailing_data if self._trailing_data is not None else b''
-        self._trailing_data = None
+        content = self._trailing_data
+        self._trailing_data = b''
 
         if not size or size == -1:
             for chunk in self._chunks:
@@ -178,15 +176,12 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
             yield from self.extract(Path(fname), wrapped)
 
     @abc.abstractmethod
-    def read_gz_file(self, file, filepath=None):
+    def read_file_stream(self, file: IOBase):
         """
-
-        """
-
-    @abc.abstractmethod
-    def read_uncompressed_file(self, file: IOBase):
-        """
-
+        When we finally hit a file that no longer needs to be expanded/decompressed in some manner, this method
+        will be called to yield data from the file in some manner. This is here is order to allow concrete classes
+        to decide how they actually want to yield data from the file, whether that be raw chunks, as lines, or a blob
+        of the whole file (or something else entirely)
         """
 
     @abc.abstractmethod
@@ -240,7 +235,7 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
                 with gzip.open(to_open) as file:
                     # We may see files like {name}.zip.gz/.json.gz, so make sure we handle that appropriately
                     if len(suffixes) == 1:
-                        yield from self.read_gz_file(file)
+                        yield from self.read_file_stream(file)
                     else:
                         new_path = Path(str(filepath).removesuffix(".gz"))
                         yield from self.extract(new_path, file)
@@ -249,10 +244,10 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
             case [".json"] | [".log"] | []:
                 self.logger.info(f"Yielding raw file: {filepath}, from stream: {to_open}")
                 if file_stream:
-                    yield from self.read_uncompressed_file(file_stream)
+                    yield from self.read_file_stream(file_stream)
                 else:
                     with open(to_open, "rb") as file:
-                        yield from self.read_uncompressed_file(file)
+                        yield from self.read_file_stream(file)
 
             case _:
                 # TODO - is this the correct Error type?
@@ -270,10 +265,7 @@ class AbstractBlobDataLoader(AbstractFileDataLoader, abc.ABC):
 
     cache = False
 
-    def read_gz_file(self, file):
-        yield file.read()
-
-    def read_uncompressed_file(self, file):
+    def read_file_stream(self, file):
         yield file.read()
 
 
@@ -285,10 +277,6 @@ class AbstractLinesDataLoader(AbstractFileDataLoader, abc.ABC):
 
     cache = False
 
-    def read_gz_file(self, file):
-        for line in file:
-            yield line
-
-    def read_uncompressed_file(self, file):
+    def read_file_stream(self, file):
         for line in file:
             yield line

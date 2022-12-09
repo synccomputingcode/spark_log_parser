@@ -161,8 +161,6 @@ class ApplicationModel:
 
                 hosts.add(executor.host)
 
-                # TODO - what happens if we receive multiple of these events and they have different
-                #  amounts of cores?
                 self.cores_per_executor = executor.cores
                 self.num_executors += 1
                 self.max_executors = max(self.num_executors, self.max_executors)
@@ -177,53 +175,11 @@ class ApplicationModel:
                 executor.end_time = json_data["Timestamp"]
                 executor.removed_reason = json_data["Removed Reason"]
 
-            elif event_type == "SparkListenerEnvironmentUpdate":
-
-                spark_properties = json_data["Spark Properties"]
-
-                # This if is specifically for databricks logs
-                if spark_version := spark_properties.get(
-                    "spark.databricks.clusterUsageTags.sparkVersion"
-                ):
-                    self.cloud_platform = "databricks"
-                    self.spark_version = spark_version
-                    self.cluster_id = spark_properties[
-                        "spark.databricks.clusterUsageTags.clusterId"
-                    ]
-                    self.cloud_provider = spark_properties[
-                        "spark.databricks.clusterUsageTags.cloudProvider"
-                    ].lower()
-                elif cluster_id := json_data.get("System Properties", {}).get("EMR_CLUSTER_ID"):
-                    self.cloud_platform = "emr"
-                    self.cloud_provider = "aws"
-                    self.cluster_id = cluster_id
-                    self.emr_version_tag = json_data["System Properties"]["EMR_RELEASE_LABEL"]
-
-                self.spark_metadata = {**self.spark_metadata, **spark_properties}
-
             elif event_type == "org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd":
                 sql_id = json_data["executionId"]
                 end_time = json_data["time"] / 1000
                 self.sql[sql_id]["end_time"] = end_time
                 self.maybe_set_new_finish_time(end_time)
-
-            elif event_type == "SparkListenerExecutorAdded":
-                hosts.append(json_data["Executor Info"]["Host"])
-                self.cores_per_executor = int(json_data["Executor Info"]["Total Cores"])
-                self.num_executors = self.num_executors + 1
-                self.max_executors = max(self.num_executors, self.max_executors)
-                self.executors[json_data["Executor ID"]] = ExecutorModel(json_data)
-                self.executors[json_data["Executor ID"]].removed_reason = ""
-
-            # So far logs I've looked at only explicitly remove Executors when there is a problem like
-            # lost worker. Use this to flag premature executor removal
-            elif event_type == "SparkListenerExecutorRemoved":
-                self.executorRemovedEarly = True
-                self.num_executors = self.num_executors - 1
-                self.executors[json_data["Executor ID"]].end_time = json_data["Timestamp"]
-                self.executors[json_data["Executor ID"]].removed_reason = json_data[
-                    "Removed Reason"
-                ]
 
             elif event_type == "SparkListenerApplicationStart":
                 self.start_time = json_data["Timestamp"] / 1000
@@ -238,11 +194,6 @@ class ApplicationModel:
                 self.sql[sql_id]["start_time"] = json_data["time"] / 1000
                 self.sql[sql_id]["description"] = json_data["description"]
                 self.parse_all_accum_metrics(json_data)
-
-            elif event_type == "org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd":
-                sql_id = json_data["executionId"]
-                self.sql[sql_id]["end_time"] = json_data["time"] / 1000
-                self.finish_time = json_data["time"] / 1000
 
             elif (
                 event_type

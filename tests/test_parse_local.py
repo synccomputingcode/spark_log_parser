@@ -3,7 +3,8 @@ from pathlib import Path
 import pytest
 
 from spark_log_parser.parsing_models.application_model_v2 import create_spark_application
-from tests import parsed_files, assert_all_files_identical, PARSED_KEYS
+from tests import parsed_files, assert_all_files_identical, PARSED_KEYS, APP_NAME_INCORRECT_MESSAGE, \
+    PARSED_KEYS_MISSING_MESSAGE
 
 
 def get_spark_app_from_raw_log(event_log_path):
@@ -14,13 +15,14 @@ def get_parsed_log(event_log_path):
     return get_spark_app_from_raw_log(event_log_path).to_dict()
 
 
+
 def test_simple_databricks_log():
     path = Path("tests", "logs", "databricks.json").resolve()
     parsed_app = get_parsed_log(path)
-    assert all(key in parsed_app for key in PARSED_KEYS), "Not all keys are present"
+    assert all(key in parsed_app for key in PARSED_KEYS), PARSED_KEYS_MISSING_MESSAGE
     assert (
         parsed_app["metadata"]["application_info"]["name"] == "Databricks Shell"
-    ), "Name is as expected"
+    ), APP_NAME_INCORRECT_MESSAGE
 
 
 @pytest.mark.parametrize("parsed_files",
@@ -28,10 +30,10 @@ def test_simple_databricks_log():
                          indirect=["parsed_files"])
 def test_simple_databricks_archive(parsed_files):
     for file in parsed_files:
-        assert all(key in file for key in PARSED_KEYS), "Not all keys are present"
+        assert all(key in file for key in PARSED_KEYS), PARSED_KEYS_MISSING_MESSAGE
         assert (
             file["metadata"]["application_info"]["name"] == "Databricks Shell"
-        ), "Name is as expected"
+        ), APP_NAME_INCORRECT_MESSAGE
 
     assert all(file == parsed_files[0] for file in
                parsed_files[1:]), "Expected all parsed files to be the same, but they were not"
@@ -42,10 +44,10 @@ def test_simple_databricks_archive(parsed_files):
                          indirect=["parsed_files"])
 def test_simple_emr_log(parsed_files):
     for file in parsed_files:
-        assert all(key in file for key in PARSED_KEYS), "Not all keys are present"
+        assert all(key in file for key in PARSED_KEYS), PARSED_KEYS_MISSING_MESSAGE
         assert (
             file["metadata"]["application_info"]["name"] == "Text Similarity"
-        ), "Name is as expected"
+        ), APP_NAME_INCORRECT_MESSAGE
 
     assert all(file == parsed_files[0] for file in
                parsed_files[1:]), "Expected all parsed files to be the same, but they were not"

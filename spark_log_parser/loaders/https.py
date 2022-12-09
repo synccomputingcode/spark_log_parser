@@ -17,8 +17,6 @@ class AbstractHTTPFileDataLoader(AbstractFileDataLoader, abc.ABC):
         if parsed_url.scheme not in {"http", "https"}:
             raise ValueError(f"URL scheme '{parsed_url.scheme}' is not one of {', '.join(self.ALLOWED_SCHEMES)}")
 
-        return
-
     def load_item(self, url):
         self._validate_url(url)
         response = requests.get(url, stream=True)
