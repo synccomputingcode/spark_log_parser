@@ -1,16 +1,9 @@
 import collections
-import json
 import logging
-import math
 import numpy
-import sys
 
 from .stage_model import StageModel
-from .task_model import TaskModel
-"""
-from stage_model import StageModel
-from task_model import TaskModel
-"""
+
 class JobModel:
     """ 
     Model for a job within an application.
