@@ -32,6 +32,9 @@ UNORDERED_PARSED_KEYS = [
     "executors"
 ]
 
+APP_NAME_INCORRECT_MESSAGE = "Application name does not match expected value"
+PARSED_KEYS_MISSING_MESSAGE = "Not all keys present in parsed eventlog"
+
 
 def assert_all_files_identical(parsed_files):
     """
@@ -98,7 +101,6 @@ def parsed_files(request) -> list[dict | SparkApplication]:
     parsed_zip = parse_fn(zip_path)
 
     tgz_archives = []
-    # TODO - return generator in order to minimize memory usage?
     for ext in [".tgz", ".tar.gz"]:
         try:
             tgz = zip_to_tgz(zip_path, ext)

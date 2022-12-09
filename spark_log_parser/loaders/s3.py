@@ -65,39 +65,33 @@ class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
         if object_list.get("IsTruncated", False):
             raise AssertionError(f"Too many objects at {filepath}.")
 
-        files_to_fetch = []
+        contents_to_fetch = [content for content in object_list.get("Contents") if not self.should_skip_file(content["Key"])]
+        if not contents_to_fetch:
+            raise AssertionError(f"No valid objects matching '{key}' in bucket: {bucket}")
+
+        num_objects = len(contents_to_fetch)
+        # TODO - define struct for these limits/thresholds
+        if num_objects > 100:
+            raise AssertionError(f"Too many objects in bucket: {bucket}.")
+
         total_size = 0
-
-        if contents := object_list.get("Contents"):
-            num_objects = len(contents)
-
-            # TODO - define struct for these limits/thresholds
-            if num_objects > 100:
-                raise AssertionError(f"Too many objects at {filepath}.")
-
-            for content in contents:
-                filename = content["Key"]
-                if not self.should_skip_file(filename):
-                    files_to_fetch.append(filename)
-                    total_size += content["Size"]
-                    if total_size > 20000000000:
-                        raise AssertionError(f"Size limit exceeded while downloading from {filepath}.")
-
-        else:
-            raise AssertionError(f"No objects matching '{key}' in bucket: {bucket}")
+        for content in contents_to_fetch:
+            total_size += content["Size"]
+            if total_size > 20000000000:
+                raise AssertionError(f"Size limit exceeded while downloading from {filepath}.")
 
         file_streams = []
         # TODO - this serially fetches all matching objects in the bucket at the moment...
         #  There is likely a better way to do this? It may require some ThreadExecutors, though
-        for filename in files_to_fetch:
+        for content in contents_to_fetch:
             # Wrap the botocore.response.StreamingBody and return that so that subsequent extraction can operate on the
             #  stream vs. loading all the files into memory
-            data = self.s3.get_object(Bucket=bucket, Key=filename)["Body"]
+            data = self.s3.get_object(Bucket=bucket, Key=content["Key"])["Body"]
             wrapped = S3StreamingBodyFileWrapper(data)
             file_streams.append(wrapped)
 
-        for (filepath, filestream) in zip(files_to_fetch, file_streams):
-            yield from self.extract(Path(filepath), filestream)
+        for (content, filestream) in zip(contents_to_fetch, file_streams):
+            yield from self.extract(Path(content["Key"]), filestream)
 
 
 class S3FileBlobDataLoader(AbstractS3FileDataLoader, AbstractBlobDataLoader):

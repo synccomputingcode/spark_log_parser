@@ -824,8 +824,6 @@ class UnparsedLogSparkApplicationLoader(
         t1 = time.time()
 
         df = (
-            # app_model.accum_metrics
-            # pd.DataFrame(app_model.accum_metrics.values(), sorted(app_model.accum_metrics.keys()))
             pd.DataFrame(app_model.accum_metrics)
             .transpose()
             # only driver accum values are updated
