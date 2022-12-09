@@ -1,5 +1,4 @@
-import json
-from json import JSONDecodeError
+import ujson as json
 from typing import Generic, TypeVar
 
 from aiodataloader import DataLoader
@@ -38,7 +37,7 @@ def yield_json_lines(lines):
         #  JSON objects, they will fail, and so this allows us to just skip those "bad" lines and
         #  continue processing other files in the archive. However, this `except` should probably
         #  be more robust so that we aren't ignoring real issues!
-        except JSONDecodeError:
+        except json.JSONDecodeError:
             # TODO - real logger
             print(line)
             # We have to continue here because these will be the lines for the top-level file. If this is an archive,
