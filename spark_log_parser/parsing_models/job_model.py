@@ -38,13 +38,11 @@ class JobModel:
             if len(s.tasks) == 0:
                 stages_to_drop.append(id)
         for id in stages_to_drop:
-            # print("Dropping stage %s" % id)
             del self.stages[id]
 
         # Compute the amount of overlapped time between stages
         # (there should just be two stages, at the beginning, that overlap and run concurrently).
         # This computation assumes that not more than two stages overlap.
-        # print(["%s: %s tasks" % (id, len(s.tasks)) for id, s in self.stages.items()])
         start_and_finish_times = [(id, s.start_time, s.conservative_finish_time())
             for id, s in self.stages.items()]
         start_and_finish_times.sort(key = lambda x: x[1])
@@ -55,15 +53,12 @@ class JobModel:
         for id, start, finish in start_and_finish_times:
             if start < old_end:
                 self.overlap += old_end - start
-                # print("Overlap:", self.overlap, "between ", id, "and", previous_id)
                 self.stages_to_combine.add(id)
                 self.stages_to_combine.add(previous_id)
                 old_end = max(old_end, finish)
             if finish > old_end:
                 old_end = finish
                 previous_id = id
-
-        # print("Stages to combine: ", self.stages_to_combine)
 
         # self.combined_stages_concurrency = -1
         # if len(self.stages_to_combine) > 0:

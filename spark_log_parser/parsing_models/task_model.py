@@ -133,7 +133,6 @@ class TaskModel:
         self.local_read_time = shuffle_read_metrics.get("Local Read Time", 0) / 1000  # [s]
         self.total_time_fetching = shuffle_read_metrics["Fetch Wait Time"] / 1000  # [s]
 
-
         if task_executor_metrics is not None:
             self.jvm_heap_memory = task_executor_metrics["JVMHeapMemory"]
             self.jvm_offheap_memory = task_executor_metrics["JVMOffHeapMemory"]
