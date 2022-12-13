@@ -361,7 +361,7 @@ class UnparsedLogSparkApplicationLoader(
             return spark_app
 
         spark_app.existsSQL = True
-        df = pd.DataFrame([])
+        dfs: list[pd.DataFrame] = []
         for sqlid, sql in app_model.sql.items():
             sql_jobs = []
             sql_stages = []
@@ -389,24 +389,19 @@ class UnparsedLogSparkApplicationLoader(
 
                         for task in stage.tasks:
                             sql_tasks.append(task.task_id)
-
-            df = df.append(
-                pd.DataFrame.from_dict(
-                    {
-                        "sql_id": [sqlid],
-                        "description": sql["description"],
-                        "start_time": [sql["start_time"] - app_model.start_time],
-                        "end_time": [sql["end_time"] - app_model.start_time],
-                        "duration": [sql["end_time"] - sql["start_time"]],
-                        "job_ids": [sql_jobs],
-                        "stage_ids": [sql_stages],
-                        "task_ids": [sql_tasks],
-                    }
-                )
-            )
+            dfs.append(pd.DataFrame.from_dict({
+                "sql_id": [sqlid],
+                "description": sql["description"],
+                "start_time": [sql["start_time"] - app_model.start_time],
+                "end_time": [sql["end_time"] - app_model.start_time],
+                "duration": [sql["end_time"] - sql["start_time"]],
+                "job_ids": [sql_jobs],
+                "stage_ids": [sql_stages],
+                "task_ids": [sql_tasks],
+            }))
 
         df = (
-            df
+            pd.concat(dfs)
             # Remove any rows that have duplicate sql_id column values
             .drop_duplicates(keep="first", subset="sql_id")
             .sort_values(by="sql_id")
@@ -453,7 +448,7 @@ class UnparsedLogSparkApplicationLoader(
     ) -> SparkApplication:
         app_model = raw_data
         t1 = time.time()
-        df = pd.DataFrame([])
+        dfs: list[pd.DataFrame] = []
         ref_time = app_model.start_time
         for jid, job in app_model.jobs.items():
 
@@ -461,21 +456,20 @@ class UnparsedLogSparkApplicationLoader(
             for sid, stage in job.stages.items():
                 stage_ids.append(sid)
 
-            df = df.append(
-                pd.DataFrame.from_dict(
-                    {
-                        "job_id": [jid],
-                        "sql_id": None,
-                        "stage_ids": [stage_ids],
-                        "submission_time": [job.submission_time - ref_time],
-                        "completion_time": [job.completion_time - ref_time],
-                        "duration": [job.completion_time - job.submission_time],
-                        "submission_timestamp": [job.submission_time],
-                        "completion_timestamp": [job.completion_time],
-                    }
-                )
-            )
+            dfs.append(pd.DataFrame.from_dict(
+                {
+                    "job_id": [jid],
+                    "sql_id": None,
+                    "stage_ids": [stage_ids],
+                    "submission_time": [job.submission_time - ref_time],
+                    "completion_time": [job.completion_time - ref_time],
+                    "duration": [job.completion_time - job.submission_time],
+                    "submission_timestamp": [job.submission_time],
+                    "completion_timestamp": [job.completion_time],
+                }
+            ))
 
+        df = pd.concat(dfs)
         if len(df) > 0:
             df = df.sort_values(by="job_id")
             df = df.set_index("job_id")

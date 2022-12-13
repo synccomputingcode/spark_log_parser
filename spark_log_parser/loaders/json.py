@@ -1,5 +1,5 @@
 import logging
-import ujson as json
+import orjson
 from typing import Generic, TypeVar
 
 from aiodataloader import DataLoader
@@ -22,7 +22,7 @@ class JSONBlobDataLoader(DataLoader, Generic[RawJSONBlobDataLoader]):
     async def batch_load_fn(self, keys):
         raw_datas = await self.blob_data_loader.load_many(keys)
         # We expect each "blob" here to be well-formed JSON, so parse each of them thusly
-        return [json.loads(next(raw_data)) for raw_data in raw_datas]
+        return [orjson.loads(next(raw_data)) for raw_data in raw_datas]
 
 
 RawJSONLinesDataLoader = TypeVar("LinesDataLoader", LocalFileLinesDataLoader, S3FileLinesDataLoader,
@@ -37,14 +37,14 @@ class JSONLinesDataLoader(DataLoader, Generic[RawJSONLinesDataLoader]):
         num_bad_lines_seen = 0
         for line in lines:
             try:
-                yield json.loads(line)
+                yield orjson.loads(line)
             # Note - this is largely here because we may get arbitrary file types in archives where we are
             #  expecting eventlog files (which are JSON Lines). If we try to load those "lines" as
             #  JSON objects, they will fail, and so this allows us to just skip those "bad" lines and
             #  continue processing other files in the archive. However, this `except` could maybe be
             #  more robust so that we aren't ignoring real issues! If we do encounter some bad lines,
             #  we will at the very least log how many we hit
-            except json.JSONDecodeError:
+            except orjson.JSONDecodeError:
                 num_bad_lines_seen += 1
                 # We have to continue here because these will be the lines for the top-level file. If this is an
                 #  archive, then it is possible for some lines to not be parse-able as JSON, but for others to be
