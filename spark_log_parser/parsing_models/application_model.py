@@ -289,10 +289,7 @@ class ApplicationModel:
             self.cloud_platform = "emr"
             self.cloud_provider = "aws"
 
-        self.dag.decipher_dag()
-        self.dag.add_broadcast_dependencies(self.stdoutpath)
-
-        self.num_instances = len(numpy.unique(hosts))
+        self.num_instances = len(hosts)
         self.executors_per_instance = numpy.ceil(self.num_executors / self.num_instances)
 
         for task in self.tasks:
@@ -318,6 +315,9 @@ class ApplicationModel:
 
         for job_id, job in self.jobs.items():
             job.initialize_job()
+
+        self.dag.decipher_dag()
+        self.dag.add_broadcast_dependencies(self.stdoutpath)
 
     def maybe_set_new_finish_time(self, new_finish_time: int):
         """
