@@ -1,6 +1,5 @@
 import collections
 import gzip
-import os
 
 import boto3
 import numpy
