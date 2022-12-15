@@ -41,7 +41,7 @@ class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
     """
 
     _s3 = None
-    
+
     def __init__(self):
         super().__init__()
 
@@ -65,7 +65,8 @@ class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
         if object_list.get("IsTruncated", False):
             raise AssertionError(f"Too many objects at {filepath}.")
 
-        contents_to_fetch = [content for content in object_list.get("Contents") if not self.should_skip_file(content["Key"])]
+        contents_to_fetch = [content for content in object_list.get("Contents") if
+                             not self.should_skip_file(content["Key"])]
         if not contents_to_fetch:
             raise AssertionError(f"No valid objects matching '{key}' in bucket: {bucket}")
 
@@ -100,4 +101,3 @@ class S3FileBlobDataLoader(AbstractS3FileDataLoader, AbstractBlobDataLoader):
 
 class S3FileLinesDataLoader(AbstractS3FileDataLoader, AbstractLinesDataLoader):
     pass
-    

@@ -8,7 +8,6 @@ from spark_log_parser.loaders.https import HTTPFileLinesDataLoader, HTTPFileBlob
 from spark_log_parser.loaders.local_file import LocalFileBlobDataLoader, LocalFileLinesDataLoader
 from spark_log_parser.loaders.s3 import S3FileBlobDataLoader, S3FileLinesDataLoader
 
-
 RawJSONBlobDataLoader = TypeVar("BlobDataLoader", LocalFileBlobDataLoader, S3FileBlobDataLoader, HTTPFileBlobDataLoader)
 
 
@@ -22,7 +21,6 @@ class JSONBlobDataLoader(DataLoader, Generic[RawJSONBlobDataLoader]):
     def yield_json(self, data):
         _, blob = data
         return orjson.loads(next(blob))
-
 
     async def batch_load_fn(self, keys):
         raw_datas = await self.blob_data_loader.load_many(keys)
@@ -48,7 +46,7 @@ class JSONLinesDataLoader(DataLoader, Generic[RawJSONLinesDataLoader]):
                 yield json_line
             except orjson.JSONDecodeError:
                 # If the first line is not parseable as a JSON object, try to parse the whole file as a JSON Object
-                #  as well, and yield that as a line instead.
+                #  as well, and yield that as a "line" instead.
                 # We do this for a few reasons -
                 #  - Sometimes regular JSON files are delivered in archives along with eventlog files (which are JSON
                 #     Lines). These JSON files may contain valuable information that we don't want to drop on the floor

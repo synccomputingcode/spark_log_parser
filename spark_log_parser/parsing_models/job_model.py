@@ -4,13 +4,15 @@ import numpy
 
 from .stage_model import StageModel
 
+
 class JobModel:
-    """ 
+    """
     Model for a job within an application.
-    
+
     Modified from trace analyzer from Kay Ousterhout: https://github.com/kayousterhout/trace-analysis
 
     """
+
     def __init__(self):
         self.logger = logging.getLogger("Job")
         # Map of stage IDs to Stages.
@@ -43,9 +45,9 @@ class JobModel:
         # Compute the amount of overlapped time between stages
         # (there should just be two stages, at the beginning, that overlap and run concurrently).
         # This computation assumes that not more than two stages overlap.
-        start_and_finish_times = [(id, s.start_time, s.conservative_finish_time())
-            for id, s in self.stages.items()]
-        start_and_finish_times.sort(key = lambda x: x[1])
+        start_and_finish_times = [(stage_id, s.start_time, s.conservative_finish_time())
+                                  for stage_id, s in self.stages.items()]
+        start_and_finish_times.sort(key=lambda x: x[1])
         self.overlap = 0
         old_end = 0
         previous_id = ""
@@ -74,7 +76,7 @@ class JobModel:
     def write_features(self, filepath):
         """ Outputs a csv file with features of each task """
         with open(f'{filepath}.csv', 'w') as f:
-            f.write('stage_id, executor_id, start_time, finish_time, executor, executor_run_time, executor_deserialize_time, result_serialization_time, gc_time, network_bytes_transmitted_ps, network_bytes_received_ps, process_cpu_utilization, total_cpu_utilization, shuffle_write_time, shuffle_mb_written, input_read_time, input_mb, output_mb, has_fetch, data_local, local_mb_read, local_read_time, total_time_fetching, remote_mb_read, scheduler_delay\n')
+            f.write(
+                'stage_id, executor_id, start_time, finish_time, executor, executor_run_time, executor_deserialize_time, result_serialization_time, gc_time, network_bytes_transmitted_ps, network_bytes_received_ps, process_cpu_utilization, total_cpu_utilization, shuffle_write_time, shuffle_mb_written, input_read_time, input_mb, output_mb, has_fetch, data_local, local_mb_read, local_read_time, total_time_fetching, remote_mb_read, scheduler_delay\n')
             for id, stage in self.stages.items():
-                numpy.savetxt(f, stage.get_features(id), delimiter=',', fmt="%s")    
-
+                numpy.savetxt(f, stage.get_features(id), delimiter=',', fmt="%s")

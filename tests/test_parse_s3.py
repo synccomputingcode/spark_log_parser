@@ -15,6 +15,7 @@ from spark_log_parser.parsing_models.application_model_v2 import create_spark_ap
 BOTO_CLIENT_STUB_TARGET = "boto3.client"
 S3_GET_OBJECT_CONTENT_TYPE = "application/octet-stream"
 
+
 @pytest.mark.parametrize(
     "event_log_url",
     [
@@ -63,7 +64,8 @@ def test_emr_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir
     stubber.assert_no_pending_responses()
     assert spark_app is not None
     metadata = spark_app.metadata
-    assert metadata['application_info']['spark_version'] is not None\
+    assert metadata['application_info']['spark_version'] is not None
+
 
 @pytest.mark.parametrize(
     "event_log_url",
@@ -114,6 +116,7 @@ def test_parsed_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_
     assert spark_app is not None
     metadata = spark_app.metadata
     assert metadata['application_info']['spark_version'] is not None
+
 
 @pytest.mark.parametrize(
     "event_log_url",

@@ -7,9 +7,9 @@ import pytest
 from spark_log_parser.loaders.https import HTTPFileLinesDataLoader, HTTPFileBlobDataLoader
 from spark_log_parser.loaders.json import JSONLinesDataLoader, JSONBlobDataLoader
 from spark_log_parser.parsing_models.application_model_v2 import \
-    UnparsedLogSparkApplicationLoader, SparkApplication, \
+    SparkApplication, \
     ParsedLogSparkApplicationLoader, AmbiguousLogFormatSparkApplicationLoader
-from tests import parsed_files, assert_all_files_identical, PARSED_KEYS
+from tests import assert_all_files_identical, PARSED_KEYS
 
 
 def get_spark_app(eventlog_local_path) -> SparkApplication:

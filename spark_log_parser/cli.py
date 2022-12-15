@@ -12,8 +12,7 @@ logging.captureWarnings(True)
 
 from spark_log_parser.eventlog import EventLogBuilder  # noqa: E402
 from spark_log_parser.extractor import Extractor, ExtractThresholds  # noqa: E402
-from spark_log_parser.parsing_models.application_model_v2 import SparkApplication, \
-    create_spark_application  # noqa: E402
+from spark_log_parser.parsing_models.application_model_v2 import create_spark_application  # noqa: E402
 
 logger = logging.getLogger("spark_log_parser")
 

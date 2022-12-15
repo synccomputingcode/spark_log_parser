@@ -16,7 +16,6 @@ class AbstractLocalFileDataLoader(AbstractFileDataLoader, ABC):
     def load_item(self, filepath: str | ParseResult):
         parsed_url: ParseResult = filepath if isinstance(filepath, ParseResult) else urlparse(filepath)
         path: Path = Path(parsed_url.path)
-
         yield from self.extract(path)
 
 

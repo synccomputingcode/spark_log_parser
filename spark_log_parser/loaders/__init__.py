@@ -29,9 +29,9 @@ class FileChunkStreamWrapper:
     """
 
     _trailing_data: bytes = b''
-    _chunks = None
+    _chunks: Iterator[bytes]
 
-    def __init__(self, chunks):
+    def __init__(self, chunks: Iterator[bytes]):
         assert chunks
         self._chunks = chunks
 
@@ -92,7 +92,7 @@ class FileChunkStreamWrapper:
 
 
 class ZipArchiveMemberWrapper(FileChunkStreamWrapper):
-    pass
+    """Just an alias for FileChunkStreamWrapper when used for extracting Zip archive members using stream-unzip"""
 
 
 class AbstractFileDataLoader(abc.ABC, DataLoader):
@@ -242,7 +242,6 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
                 with gzip.open(to_open) as file:
                     # We may see files like {name}.zip.gz/.json.gz, so make sure we handle that appropriately
                     if len(suffixes) == 1:
-                        # yield from self.read_file_stream(file_stream)
                         yield filepath, self.read_file_stream(file)
                     else:
                         new_path = Path(str(filepath).removesuffix(".gz"))
@@ -252,12 +251,10 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
             case [".json"] | [".log"] | []:
                 self.logger.info(f"Yielding raw file: {filepath}, from stream: {to_open}")
                 if file_stream:
-                    # yield from self.read_file_stream(file_stream)
                     yield filepath, self.read_file_stream(file_stream)
 
                 else:
                     with open(to_open, "rb") as file:
-                        # yield from self.read_file_stream(file)
                         yield filepath, self.read_file_stream(file)
 
             case _:
@@ -270,8 +267,7 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
 
 class AbstractBlobDataLoader(AbstractFileDataLoader, abc.ABC):
     """
-    Abstract class that implements the various read_* methods from AbstractFileDataLoader in such a way
-    as to yield full "blobs" of data from the underlying file source. Useful for loading e.g. JSON files
+    Abstract class that yields full "blobs" of data from the underlying file source. Useful for loading e.g. JSON files
     """
 
     cache = False
@@ -282,8 +278,8 @@ class AbstractBlobDataLoader(AbstractFileDataLoader, abc.ABC):
 
 class AbstractLinesDataLoader(AbstractFileDataLoader, abc.ABC):
     """
-    Abstract class that implements the various read_* methods from AbstractFileDataLoader in such a way
-    as to yield individual lines of the underlying file source. Useful for loading e.g. JSON Lines or CSV files
+    Abstract class that yields individual lines of the underlying file source. Useful for loading e.g. JSON Lines
+    or CSV files
     """
 
     cache = False

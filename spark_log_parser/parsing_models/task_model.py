@@ -24,7 +24,7 @@ class TaskModel:
         self.straggler_behavior_explained = False
 
     def initialize_from_json(self, json_data):
-        self.logger = logging.getLogger("Task")
+        self.logger = logging.getLogger("TaskModel")
 
         task_info = json_data["Task Info"]
 

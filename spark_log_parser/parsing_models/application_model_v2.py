@@ -125,7 +125,8 @@ class AbstractSparkApplicationDataLoader(abc.ABC, Generic[DataType], DataLoader)
 
     logger: logging.Logger
 
-    def __init__(self):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.logger = logging.getLogger(self.__class__.__name__)
 
     @abc.abstractmethod
@@ -346,8 +347,8 @@ class UnparsedLogSparkApplicationLoader(
     async def load_raw_datas(self, keys) -> list[ApplicationModel]:
         """ """
         if self._json_lines_loader is None:
-            raise RuntimeError("Instance was initialized without a json_lines_loader, and therefore can't be used " +
-                               "to load raw data.")
+            raise RuntimeError("Instance was initialized without a json_lines_loader, and therefore can't be used "
+                               + "to load raw data.")
 
         raw_datas = await self._json_lines_loader.load_many(keys)
 

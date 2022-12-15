@@ -3,12 +3,9 @@ import zipfile
 import tarfile
 import os.path
 import logging
-import pytest
 from pathlib import Path
 from pprint import pformat
 from deepdiff import DeepDiff
-
-from spark_log_parser.parsing_models.application_model_v2 import SparkApplication
 
 logging.basicConfig()
 logging.root.setLevel(logging.INFO)
@@ -59,14 +56,14 @@ def assert_all_files_identical(parsed_files):
                 diff_ignoring_order = DeepDiff(curr_value, first_value, ignore_order=True)
 
             if diff and not diff_ignoring_order and key not in UNORDERED_PARSED_KEYS:
-                raise ValueError(f"Detected an ordering difference for key: {key} in parsed log files.\n" +
-                                 f"If this is expected, please update UNORDERED_PARSED_KEYS. Otherwise, please " +
-                                 "fix this diff.\n"
-                                 f"{pformat(diff)}")
+                raise ValueError(f"Detected an ordering difference for key: {key} in parsed log files.\n"
+                                 + "If this is expected, please update UNORDERED_PARSED_KEYS. Otherwise, please "
+                                 + "fix this diff.\n"
+                                 + f"{pformat(diff)}")
 
             if diff and diff_ignoring_order:
-                raise ValueError(f"Detected a difference not due to ordering for key: {key} in parsed log files\n" +
-                                 f"{pformat(diff_ignoring_order)}")
+                raise ValueError(f"Detected a difference not due to ordering for key: {key} in parsed log files\n"
+                                 + f"{pformat(diff_ignoring_order)}")
 
 
 def zip_to_tgz(zip_path: str | Path, file_suffix: str):
@@ -87,30 +84,3 @@ def zip_to_tgz(zip_path: str | Path, file_suffix: str):
             with tarfile.open(tgz_filename, "w:gz") as tarball:
                 tarball.add(temp_dir, arcname=os.path.sep)
                 return tarball
-
-@pytest.fixture
-def parsed_files(request) -> list[dict | SparkApplication]:
-    """
-    Given a reference to some .zip file and some parsing function, this fixture will -
-    - Parse the .zip archive using the given `parse_fn`,
-    - Convert the .zip archive to other archive formats we support (right now - .tgz / .tar.gz) and parse those,
-        - Remove any files written to disk,
-    - Return a list of all the parsed files
-    """
-    (zip_path, parse_fn) = request.param
-    parsed_zip = parse_fn(zip_path)
-
-    tgz_archives = []
-    for ext in [".tgz", ".tar.gz"]:
-        try:
-            tgz = zip_to_tgz(zip_path, ext)
-            filepath = Path(tgz.name)
-            parsed = parse_fn(filepath)
-            tgz_archives.append(parsed)
-        finally:
-            # We have the parsed, in-memory representation - that means we can remove the file we generated on disk
-            #  and return only the parsed app to the test. We put this in a `finally` block so that the temp file
-            #  on disk is always removed
-            filepath.unlink(missing_ok=True)
-
-    return [parsed_zip, *tgz_archives]

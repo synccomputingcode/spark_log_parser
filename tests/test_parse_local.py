@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from spark_log_parser.parsing_models.application_model_v2 import create_spark_application
-from tests import parsed_files, assert_all_files_identical, PARSED_KEYS, APP_NAME_INCORRECT_MESSAGE, \
+from tests import assert_all_files_identical, PARSED_KEYS, APP_NAME_INCORRECT_MESSAGE, \
     PARSED_KEYS_MISSING_MESSAGE
 
 
@@ -13,7 +13,6 @@ def get_spark_app_from_raw_log(event_log_path):
 
 def get_parsed_log(event_log_path):
     return get_spark_app_from_raw_log(event_log_path).to_dict()
-
 
 
 def test_simple_databricks_log():
