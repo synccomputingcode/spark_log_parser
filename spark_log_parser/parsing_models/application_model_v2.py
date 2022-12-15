@@ -473,8 +473,8 @@ class sparkApplication:
                 rdd_ids.append(appobj.dag.stage_rdd_dict[sid])
 
                 stage_info_dict = {
-                    "stage_name": stage.stage_info["Stage Name"],
-                    "num_tasks": stage.stage_info["Number of Tasks"],
+                    "stage_name": stage.stage_name,
+                    "num_tasks": stage.num_tasks,
                     "num_rdds": len(stage.stage_info["RDD Info"]),
                     "num_parents": len(stage.stage_info["Parent IDs"]),
                     "final_rdd_name": stage.stage_info["RDD Info"][0]["Name"],
@@ -597,11 +597,11 @@ class sparkApplication:
                 "emr_version_tag": appobj.emr_version_tag,
                 "cloud_platform": appobj.cloud_platform,
                 "cloud_provider": appobj.cloud_provider,
-                "cluster_id": appobj.cluster_id
+                "cluster_id": appobj.cluster_id,
             },
             "spark_params": appobj.spark_metadata,
             "existsSQL": self.existsSQL,
-            "existsExecutors": self.existsExecutors
+            "existsExecutors": self.existsExecutors,
         }
 
     def addMetadata(self, key=None, value=None):

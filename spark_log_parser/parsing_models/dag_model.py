@@ -18,11 +18,11 @@ def parse_line(line, pattern, var_names):
 class DagModel:
     def __init__(self):
         self.stage_dict = {}  # <k="stage_id", v="trans_id" >
-        self.alias_dict = defaultdict(lambda: [])  # <k="trans_id", v=["stage_id"]>
-        self.parents_dag_dict = defaultdict(lambda: [])  # <k="parent_stage", v=["child_stage"]>
-        self.rdd_stage_dict = defaultdict(lambda: [])  # <k="RDD_id", v=["Stage_IDs"]  >
-        self.stage_rdd_dict = defaultdict(lambda: [])  # <k="stage_id", v=["RDD_ids"]    >
-        self.rdd_parent_dict = defaultdict(lambda: [])  # <k="RDD_id", v=["RDD_parents"]>
+        self.alias_dict = defaultdict(list)  # <k="trans_id", v=["stage_id"]>
+        self.parents_dag_dict = defaultdict(list)  # <k="parent_stage", v=["child_stage"]>
+        self.rdd_stage_dict = defaultdict(list)  # <k="RDD_id", v=["Stage_IDs"]  >
+        self.stage_rdd_dict = defaultdict(list)  # <k="stage_id", v=["RDD_ids"]    >
+        self.rdd_parent_dict = defaultdict(list)  # <k="RDD_id", v=["RDD_parents"]>
         self.rdd_persist_dict = {}  # <k="stage_id", v="persist?"     >
         self.broadcast_stages = []  # stages that have BroadcastExchange
 
