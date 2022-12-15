@@ -5,6 +5,7 @@ import logging
 
 from io import IOBase, BufferedIOBase
 from pathlib import Path
+from typing import Iterator
 from urllib.parse import ParseResult
 
 from aiodataloader import DataLoader
@@ -198,9 +199,15 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
         for path in directory.iterdir():
             yield from self.extract(path)
 
-    def extract(self, filepath: Path, file_stream: BufferedIOBase = None):
+    def extract(self, filepath: Path, file_stream: BufferedIOBase = None) -> Iterator[tuple[Path, Iterator[bytes]]]:
         """
+        This method recursively extracts the contents of the file at the given filepath. If an open file_stream is
+        also provided, that file_stream will be operated on instead.
 
+        This method will ultimately return a sequence of tuples where the first item is the Path of the file that is
+        currently open (if we are extracting an archive/directory, then this will be the name of the file within
+        that location, not the name of the archive/directory itself), and the 2nd item is an Iterator of the bytes in
+        that file.
         """
         if file_stream is None and filepath.is_dir():
             yield from self.extract_directory(filepath)
@@ -235,7 +242,8 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
                 with gzip.open(to_open) as file:
                     # We may see files like {name}.zip.gz/.json.gz, so make sure we handle that appropriately
                     if len(suffixes) == 1:
-                        yield from self.read_file_stream(file)
+                        # yield from self.read_file_stream(file_stream)
+                        yield filepath, self.read_file_stream(file)
                     else:
                         new_path = Path(str(filepath).removesuffix(".gz"))
                         yield from self.extract(new_path, file)
@@ -244,10 +252,13 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
             case [".json"] | [".log"] | []:
                 self.logger.info(f"Yielding raw file: {filepath}, from stream: {to_open}")
                 if file_stream:
-                    yield from self.read_file_stream(file_stream)
+                    # yield from self.read_file_stream(file_stream)
+                    yield filepath, self.read_file_stream(file_stream)
+
                 else:
                     with open(to_open, "rb") as file:
-                        yield from self.read_file_stream(file)
+                        # yield from self.read_file_stream(file)
+                        yield filepath, self.read_file_stream(file)
 
             case _:
                 # TODO - is this the correct Error type?

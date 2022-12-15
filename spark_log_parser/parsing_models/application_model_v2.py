@@ -14,6 +14,7 @@ import pandas as pd
 from aiodataloader import DataLoader
 
 from .application_model import ApplicationModel
+from .exceptions import SyncParserException
 from .validation_configs import ConfigValidationDatabricks, ConfigValidationEMR
 from .validation_event_data import EventDataValidation
 from ..loaders.json import JSONBlobDataLoader, JSONLinesDataLoader, RawJSONLinesDataLoader, RawJSONBlobDataLoader
@@ -64,6 +65,14 @@ class SparkApplication:
         save_data["metadata"] = self.metadata
         return save_data
 
+    @staticmethod
+    def is_parsed_spark_app(data):
+        if not isinstance(data, dict):
+            return False
+
+        # TODO - this should be more robust, but matches the current logic in eventlog.py
+        return "jobData" in data
+
     def save(self, filepath=None, compress=False):
         save_data = self.to_dict()
         if (filepath is not None) and ("s3://" in filepath):
@@ -113,6 +122,11 @@ class AbstractSparkApplicationDataLoader(abc.ABC, Generic[DataType], DataLoader)
     Defines the methods that other data loaders should implement in order to appropriately construct
     some SparkApplication. The order in which these methods are called is defined in construct_spark_application
     """
+
+    logger: logging.Logger
+
+    def __init__(self):
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     @abc.abstractmethod
     async def load_raw_datas(self, keys) -> list[DataType]:
@@ -285,13 +299,6 @@ class ParsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[dict], 
 
     def compute_all_metadata(self, raw_data: dict, spark_app: SparkApplication) -> SparkApplication:
         spark_app.metadata = raw_data.get("metadata", {})
-
-        # TODO - still necessary? Can we delete this?
-        # This is for legacy support and should be removed after it is in production for a few
-        # weeks. Introduced 3/9/2022 by SDG.
-        if "sparkMetadata" in raw_data:
-            spark_app.sparkMetadata = raw_data.pop("sparkMetadata")
-
         return spark_app
 
 
@@ -317,13 +324,14 @@ class UnparsedLogSparkApplicationLoader(
 
         self._json_lines_loader = json_lines_loader
 
-    def _validate_app(self, app_model: ApplicationModel):
+    @staticmethod
+    def validate_app_model(app_model: ApplicationModel):
         match app_model:
             case ApplicationModel(cloud_platform="emr"):
-                val1 = ConfigValidationEMR(app=app_model, debug=self.debug)
+                val1 = ConfigValidationEMR(app=app_model)
 
             case ApplicationModel(cloud_platform="databricks"):
-                val1 = ConfigValidationDatabricks(app=app_model, debug=self.debug)
+                val1 = ConfigValidationDatabricks(app=app_model)
 
             case _:
                 raise ValueError(
@@ -332,11 +340,15 @@ class UnparsedLogSparkApplicationLoader(
 
         val1.validate()
 
-        val2 = EventDataValidation(app=app_model, debug=self.debug)
+        val2 = EventDataValidation(app=app_model)
         val2.validate()
 
     async def load_raw_datas(self, keys) -> list[ApplicationModel]:
         """ """
+        if self._json_lines_loader is None:
+            raise RuntimeError("Instance was initialized without a json_lines_loader, and therefore can't be used " +
+                               "to load raw data.")
+
         raw_datas = await self._json_lines_loader.load_many(keys)
 
         app_models = [
@@ -345,8 +357,8 @@ class UnparsedLogSparkApplicationLoader(
         ]
 
         for app_model in app_models:
-            # TODO - probably somewhere better to put this...
-            self._validate_app(app_model)
+            # TODO - probably somewhere better to put this?..
+            self.validate_app_model(app_model)
 
         return app_models
 
@@ -902,6 +914,107 @@ class UnparsedLogSparkApplicationLoader(
             spark_app.sqlData["time_since_last_event"] = trecent
 
         return spark_app
+
+
+class AmbiguousLogFormatSparkApplicationLoader(
+    AbstractSparkApplicationDataLoader[dict | ApplicationModel], Generic[RawJSONLinesDataLoader]
+):
+    """
+    Much of the time, we may not know whether a file given to us is for a parsed or unparsed eventlog without opening it
+    up first. But, we don't want to have to open up a file and just throw it away if it's not what we initially
+    expected. This class, then, may be used when this information is ambiguous to us, and it will handle calling into
+    the proper "sub-loader" transparently (and without having to re-load anything)
+    """
+
+    _json_lines_loader: JSONLinesDataLoader[RawJSONLinesDataLoader]
+    _parsed_app_loader: ParsedLogSparkApplicationLoader
+    _unparsed_app_loader: UnparsedLogSparkApplicationLoader
+
+    def __init__(
+        self,
+        json_lines_loader: JSONLinesDataLoader[RawJSONLinesDataLoader],
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+
+        self._json_lines_loader = json_lines_loader
+        # These "sub-loaders" won't actually be loading the raw data, so we don't need to pass them any dataloaders
+        #  We just want to use them to construct our SparkApplications based on whether the data handed to us is a
+        #  parsed or unparsed eventlog
+        self._parsed_app_loader = ParsedLogSparkApplicationLoader(None)
+        self._unparsed_app_loader = UnparsedLogSparkApplicationLoader(None)
+
+    async def load_raw_datas(self, keys) -> list[DataType]:
+        raw_datas = await self._json_lines_loader.load_many(keys)
+
+        ret = []
+        for raw_data in raw_datas:
+            line = next(raw_data)
+            # This assumes that for parsed apps, the first "line" from the file will be the fully-formed dictionary
+            #  representation of a SparkApplication. This may not be true over time...
+            if SparkApplication.is_parsed_spark_app(line):
+                ret.append((True, line))
+            else:
+                # ApplicationModel expects to receive all the lines, so just wrap the line we already read in a
+                #  generator so that we can re-yield it appropriately
+                def lines():
+                    yield line
+                    yield from raw_data
+
+                app_model = ApplicationModel(log_lines=lines())
+                try:
+                    UnparsedLogSparkApplicationLoader.validate_app_model(app_model)
+                    ret.append((False, app_model))
+                except SyncParserException as e:
+                    self.logger.warning(e)
+                    ret.append((False, None))
+
+        return ret
+
+    async def batch_load_fn(self, keys):
+        raw_datas = await self.load_raw_datas(keys)
+
+        apps = []
+        for (is_parsed, data) in raw_datas:
+            # If we weren't able to create a SparkApplication out of one of the "keys" provided to us, we still need to
+            #  return something in order to adhere to the DataLoader batch API
+            if data is None:
+                spark_app = None
+            elif is_parsed:
+                spark_app = self._parsed_app_loader.construct_spark_application(data)
+            else:
+                spark_app = self._unparsed_app_loader.construct_spark_application(data)
+
+            apps.append(spark_app)
+
+        return apps
+
+    # None of these abstract methods actually need to be implemented because we will be calling into the proper
+    #  un/parsed SparkApplication loader based on the underlying data, and those loaders have these methods
+    #  implemented already
+    def compute_sql_info(self, raw_data: DataType, spark_app: SparkApplication) -> SparkApplication:
+        pass
+
+    def compute_executor_info(self, raw_data: DataType, spark_app: SparkApplication) -> SparkApplication:
+        pass
+
+    def compute_all_job_data(self, raw_data: DataType, spark_app: SparkApplication) -> SparkApplication:
+        pass
+
+    def compute_all_task_data(self, raw_data: DataType, spark_app: SparkApplication) -> SparkApplication:
+        pass
+
+    def compute_all_stage_data(self, raw_data: DataType, spark_app: SparkApplication) -> SparkApplication:
+        pass
+
+    def compute_all_driver_accum_data(self, raw_data: DataType, spark_app: SparkApplication) -> SparkApplication:
+        pass
+
+    def compute_all_metadata(self, raw_data: DataType, spark_app: SparkApplication) -> SparkApplication:
+        pass
+
+    def compute_recent_events(self, raw_data: DataType, spark_app: SparkApplication) -> SparkApplication:
+        pass
 
 
 """
