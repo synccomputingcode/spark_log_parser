@@ -18,21 +18,8 @@ class S3StreamingBodyFileWrapper(FileChunkStreamWrapper):
     dealing with line-delimited eventlog files, this default makes more sense for us to use.
     """
 
-    def __init__(self, body: StreamingBody):
-        # Since this stream is intended to be handed off to other classes for manipulation (i.e. unzipping), we set
-        # keepends=True because various decoding libraries may throw decode errors if we remove parts of the binary
-        # data stream
-        #
-        # Note - We need to watch out for this, though, as this means that iterating lines will give us binary buffers
-        #  with `\n` at the end still. So if we are fetching an uncompressed file from S3, whatever is parsing those
-        #  lines may need to be tolerant of that, OR we need to configure this flag properly. This would be pretty
-        #  do-able by inspecting file extensions in AbstractS3FileDataLoader.load_item, but is not currently done.
-        #  Right now, we may hit this case when loading raw .json files from S3, but json.loads(line) is tolerant of
-        #  trailing newline characters. test_parse_s3.test_raw_log_from_s3 exercises this code path for raw .json files
-        self._chunks = body.iter_lines(chunk_size=1024 * 1024, keepends=True)
-
-    def __iter__(self):
-        yield from self._chunks
+    def __init__(self, body: StreamingBody, **kwargs):
+        super().__init__(**kwargs, chunks=body.iter_chunks(1024 * 1024))
 
 
 class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
@@ -41,7 +28,7 @@ class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
     """
 
     _s3 = None
-    
+
     def __init__(self):
         super().__init__()
 
@@ -62,16 +49,13 @@ class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
 
         object_list = self.s3.list_objects_v2(Bucket=bucket, Prefix=key)
 
-        if object_list.get("IsTruncated", False):
-            raise AssertionError(f"Too many objects at {filepath}.")
-
-        contents_to_fetch = [content for content in object_list.get("Contents") if not self.should_skip_file(content["Key"])]
+        contents_to_fetch = [content for content in object_list.get("Contents") if
+                             not self.should_skip_file(content["Key"])]
         if not contents_to_fetch:
             raise AssertionError(f"No valid objects matching '{key}' in bucket: {bucket}")
 
-        num_objects = len(contents_to_fetch)
         # TODO - define struct for these limits/thresholds
-        if num_objects > 100:
+        if object_list.get("IsTruncated", False) or len(contents_to_fetch) > 100:
             raise AssertionError(f"Too many objects in bucket: {bucket}.")
 
         total_size = 0
@@ -104,4 +88,3 @@ class S3FileLinesDataLoader(AbstractS3FileDataLoader, LinesFileReaderMixin):
     """
     Simple HTTP loader that returns the file as a stream of lines (delimited by `\n`).
     """
-    
