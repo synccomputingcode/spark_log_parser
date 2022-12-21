@@ -9,7 +9,7 @@ from spark_log_parser.loaders.json import JSONLinesDataLoader, JSONBlobDataLoade
 from spark_log_parser.parsing_models.application_model_v2 import \
     UnparsedLogSparkApplicationLoader, SparkApplication, \
     ParsedLogSparkApplicationLoader
-from tests import assert_all_files_equivalent, PARSED_KEYS
+from tests import assert_all_files_equivalent, PARSED_KEYS, ROOT_DIR
 
 
 def get_spark_app(eventlog_local_path) -> SparkApplication:
@@ -39,14 +39,14 @@ def get_parsed_log(eventlog_local_path) -> dict:
 
 
 @pytest.mark.parametrize("parsed_files",
-                         [(Path("tests", "logs", "emr.zip").resolve(), get_parsed_log)],
+                         [(Path(ROOT_DIR, "logs", "emr.zip").resolve(), get_parsed_log)],
                          indirect=["parsed_files"])
 def test_simple_emr_log(parsed_files):
     assert_all_files_equivalent(parsed_files)
 
 
 @pytest.mark.parametrize("parsed_files",
-                         [(Path("tests", "logs", "emr_missing_sql_events.zip").resolve(), get_spark_app)],
+                         [(Path(ROOT_DIR, "logs", "emr_missing_sql_events.zip").resolve(), get_spark_app)],
                          indirect=["parsed_files"])
 def test_emr_missing_sql_events(parsed_files):
     for spark_app in parsed_files:
@@ -59,14 +59,14 @@ def test_emr_missing_sql_events(parsed_files):
 
 
 @pytest.mark.parametrize("parsed_files",
-                         [(Path("tests", "logs", "databricks.zip").resolve(), get_parsed_log)],
+                         [(Path(ROOT_DIR, "logs", "databricks.zip").resolve(), get_parsed_log)],
                          indirect=["parsed_files"])
 def test_simple_databricks_log(parsed_files):
     assert_all_files_equivalent(parsed_files)
 
 
 @pytest.mark.parametrize("parsed_files",
-                         [(Path("tests", "logs", "databricks-rollover-messy.zip").resolve(), get_parsed_log)],
+                         [(Path(ROOT_DIR, "logs", "databricks-rollover-messy.zip").resolve(), get_parsed_log)],
                          indirect=["parsed_files"])
 def test_databricks_rollover_log(parsed_files):
     assert_all_files_equivalent(parsed_files)
@@ -85,7 +85,7 @@ def test_parsed_log():
     """
     Test that re-hydrating a parsed spark application contains all the keys we would expect it to
     """
-    eventlog_local_path = Path("tests", "logs", "similarity_parsed.json.gz").resolve()
+    eventlog_local_path = Path(ROOT_DIR, "logs", "similarity_parsed.json.gz").resolve()
     file_size = eventlog_local_path.stat().st_size
     http_url = f"https://sync-test-artifacts.s3.amazonaws.com/{str(eventlog_local_path)}"
 

@@ -1,9 +1,13 @@
 import logging
+import os
+
 from pprint import pformat
 from deepdiff import DeepDiff
 
 logging.basicConfig()
 logging.root.setLevel(logging.INFO)
+
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # All the top-level keys that we would expect to be present in the JSON representation of a parsed SparkApplication
 PARSED_KEYS = [

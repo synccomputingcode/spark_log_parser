@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Iterator
 from urllib.parse import ParseResult
 
+from pydantic import BaseModel
 from aiodataloader import DataLoader
 from stream_unzip import stream_unzip
 
@@ -16,10 +17,19 @@ FILE_SKIP_PATTERNS = [".DS_Store".lower(), "__MACOSX".lower(), "/."]
 logger = logging.getLogger("Loaders")
 
 
-class ArchiveExtractionThresholds:
+class ArchiveExtractionThresholds(BaseModel):
     entries = 100
     size = 5000000000
-    ratio = 100
+
+
+class ArchiveTooLargeError(AssertionError):
+    """Raised when we encounter an archive that expands to beyond the allowed filesize limit"""
+    pass
+
+
+class ArchiveTooManyEntriesError(AssertionError):
+    """Raised when we encounter an archive that has more entries in it than is allowable"""
+    pass
 
 
 class FileChunkStreamWrapper:
@@ -49,16 +59,16 @@ class FileChunkStreamWrapper:
 
     def __iter__(self):
         for chunk in self._chunks:
-            self._add_chunk_to_size(chunk)
             if not chunk:
                 continue
             else:
+                self._add_chunk_to_size(chunk)
                 yield chunk
 
     def _add_chunk_to_size(self, chunk):
         self.total_size += len(chunk)
         if self._maximum_allowed_size is not None and self.total_size > self._maximum_allowed_size:
-            raise AssertionError("This archive is too big")
+            raise ArchiveTooLargeError()
 
     def read(self, size=-1) -> bytes:
         content = self._trailing_data
@@ -87,12 +97,10 @@ class FileChunkStreamWrapper:
         """
         Returns a stream of lines from self._chunks.
         """
-        trailing_data = None
-
         for chunk in self._chunks:
             self._add_chunk_to_size(chunk)
-            if trailing_data is not None:
-                chunk = trailing_data + chunk
+            if self._trailing_data:
+                chunk = self._trailing_data + chunk
 
             lines = chunk.splitlines()
 
@@ -100,15 +108,15 @@ class FileChunkStreamWrapper:
             #  if it is, then that means that our last line did not end in a newline, and therefore we need to hang
             #  on to that line for the next iteration.
             if lines and lines[-1] and chunk and lines[-1][-1] == chunk[-1]:
-                trailing_data = lines.pop()
+                self._trailing_data = lines.pop()
             else:
-                trailing_data = None
+                self._trailing_data = b''
 
             for line in lines:
                 yield line
 
-        if trailing_data is not None:
-            yield trailing_data
+        if self._trailing_data:
+            yield self._trailing_data
 
 
 class ZipArchiveMemberStreamWrapper(FileChunkStreamWrapper):
@@ -122,6 +130,7 @@ class AbstractFileReader(abc.ABC):
     have some flexibility in the manner in which they yield data from the underlying stream, whether that be raw chunks,
     lines, or as an entire blob (or something else entirely!)
     """
+
     @abc.abstractmethod
     def read_file_stream(self, file: FileChunkStreamWrapper) -> Iterator[bytes]:
         pass
@@ -174,7 +183,6 @@ class AbstractFileDataLoader(AbstractFileReader, DataLoader, abc.ABC):
         super().__init__()
         self._extraction_thresholds = extraction_thresholds or ArchiveExtractionThresholds()
 
-
     @staticmethod
     def should_skip_file(filename: str) -> bool:
         """
@@ -186,7 +194,7 @@ class AbstractFileDataLoader(AbstractFileReader, DataLoader, abc.ABC):
         filename = filename.lower()
         return any([name in filename for name in FILE_SKIP_PATTERNS])
 
-    def read_tgz_archive(self, archive: tarfile.TarFile)  -> Iterator[bytes]:
+    def read_tgz_archive(self, archive: tarfile.TarFile) -> Iterator[bytes]:
         """
         Utility for unpacking a tarball, asserting that the contents of that tarball fall within our file-size
         constraints
@@ -203,7 +211,7 @@ class AbstractFileDataLoader(AbstractFileReader, DataLoader, abc.ABC):
 
             num_files += 1
             if num_files > self._extraction_thresholds.entries:
-                raise AssertionError("Too many files present in this archive.")
+                raise ArchiveTooManyEntriesError()
 
             wrapped_bytes = FileChunkStreamWrapper(archive.extractfile(tarinfo), size_left)
             yield from self.extract(Path(tarinfo.name), wrapped_bytes)
@@ -221,7 +229,7 @@ class AbstractFileDataLoader(AbstractFileReader, DataLoader, abc.ABC):
         for fname, fsize, chunks in stream_unzip(raw_archive_stream):
             num_files += 1
             if num_files > self._extraction_thresholds.entries:
-                raise AssertionError("Too many files present in this archive.")
+                raise ArchiveTooManyEntriesError()
 
             fname = fname.decode("utf-8")
             # We can't just skip files where fsize is None, because at certain compression levels stream_unzip
@@ -235,7 +243,7 @@ class AbstractFileDataLoader(AbstractFileReader, DataLoader, abc.ABC):
                 for c in chunks:
                     size_left -= len(c)
                     if size_left <= 0:
-                        raise AssertionError("This archive is too big")
+                        raise ArchiveTooLargeError()
                 continue
 
             wrapped_bytes = ZipArchiveMemberStreamWrapper(chunks, size_left)

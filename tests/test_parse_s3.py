@@ -11,6 +11,7 @@ from botocore.response import StreamingBody
 
 from spark_log_parser.loaders import AbstractFileDataLoader
 from spark_log_parser.parsing_models.application_model_v2 import create_spark_application
+from tests import ROOT_DIR
 
 BOTO_CLIENT_STUB_TARGET = "boto3.client"
 S3_GET_OBJECT_CONTENT_TYPE = "application/octet-stream"
@@ -24,7 +25,7 @@ S3_GET_OBJECT_CONTENT_TYPE = "application/octet-stream"
 )
 @pytest.mark.parametrize(
     "event_log_file_archive,event_log_s3_dir",
-    [(Path("tests", "logs", "emr.zip"), "airlinedelay/jb-42K1E16/")],
+    [(Path(ROOT_DIR, "logs", "emr.zip"), "airlinedelay/jb-42K1E16/")],
 )
 def test_emr_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir, mocker):
     parsed_event_log_url = urlparse(event_log_url)
@@ -74,7 +75,7 @@ def test_emr_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir
 )
 @pytest.mark.parametrize(
     "event_log_file_archive,event_log_s3_dir",
-    [(Path("tests", "logs", "similarity_parsed.json.gz"), "/foo/bar-baz/")],
+    [(Path(ROOT_DIR, "logs", "similarity_parsed.json.gz"), "/foo/bar-baz/")],
 )
 def test_parsed_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir, mocker):
     parsed_event_log_url = urlparse(event_log_url)
@@ -124,7 +125,7 @@ def test_parsed_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_
 )
 @pytest.mark.parametrize(
     "event_log_file_archive,event_log_s3_dir",
-    [(Path("tests", "logs", "databricks.json"), "/foo/bar-baz/")],
+    [(Path(ROOT_DIR, "logs", "databricks.json"), "/foo/bar-baz/")],
 )
 def test_raw_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir, mocker):
     parsed_event_log_url = urlparse(event_log_url)
@@ -172,7 +173,7 @@ def test_raw_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir
 )
 @pytest.mark.parametrize(
     "event_log_file_archive,event_log_s3_dir",
-    [(Path("tests", "logs", "databricks-rollover-messy.zip"), "airlinedelay/jb-42K1E16/")],
+    [(Path(ROOT_DIR, "logs", "databricks-rollover-messy.zip"), "airlinedelay/jb-42K1E16/")],
 )
 def test_databricks_log_from_s3_dir(event_log_url, event_log_file_archive, event_log_s3_dir, mocker):
     parsed_event_log_url = urlparse(event_log_url)

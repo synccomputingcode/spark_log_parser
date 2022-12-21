@@ -33,6 +33,7 @@ dynamic = ["version", "description"]
 [project.optional-dependencies]
 test = [
     "pytest==7.1.2",
+    "pytest-asyncio==0.20.3",
     "pytest-mock==3.10.0",
     "requests-mock==1.9.3",
     "deepdiff==6.2.1",
