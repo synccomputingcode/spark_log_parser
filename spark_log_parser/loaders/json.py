@@ -1,6 +1,6 @@
 import logging
 import orjson
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, Iterator
 
 from aiodataloader import DataLoader
 
@@ -36,7 +36,7 @@ class JSONLinesDataLoader(DataLoader, Generic[RawJSONLinesDataLoader]):
     lines_data_loader: RawJSONLinesDataLoader
 
     @staticmethod
-    def yield_json_lines(filename, lines):
+    def yield_json_lines(filename, lines) -> Iterator[str]:
         num_bad_lines_seen = 0
         for line in lines:
             try:

@@ -19,7 +19,7 @@ class S3StreamingBodyFileWrapper(FileChunkStreamWrapper):
     """
 
     def __init__(self, body: StreamingBody, **kwargs):
-        super().__init__(**kwargs, chunks=body.iter_chunks(1024 * 1024))
+        super().__init__(**kwargs, chunks=body.iter_chunks())
 
 
 class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):

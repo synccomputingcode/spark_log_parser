@@ -21,7 +21,7 @@ class ApplicationModel:
     Using parts of the trace analyzer from Kay Ousterhout: https://github.com/kayousterhout/trace-analysis
     """
 
-    def __init__(self, log_lines: Iterator[bytes], stdoutpath=None, debug=False):  # noqa: C901
+    def __init__(self, log_lines: Iterator[str], stdoutpath=None, debug=False):  # noqa: C901
         # set default parameters
         self.dag = DagModel()
         self.jobs: dict[JobModel] = collections.defaultdict(JobModel)

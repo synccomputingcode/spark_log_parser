@@ -190,11 +190,12 @@ class ParsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[dict], 
     parsed logs that were saved somewhere (or submitted directly to us)
     """
 
-    _json_data_loader: JSONBlobDataLoader[RawJSONBlobDataLoader] = None
+    _json_data_loader: JSONBlobDataLoader[RawJSONBlobDataLoader]
 
     def __init__(self, json_loader: JSONBlobDataLoader[RawJSONBlobDataLoader], **kwargs):
         super().__init__(**kwargs)
 
+        assert json_loader
         self._json_data_loader = json_loader
 
     async def load_raw_datas(self, keys) -> list[dict]:

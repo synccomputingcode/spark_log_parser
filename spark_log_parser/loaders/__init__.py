@@ -40,7 +40,7 @@ class FileChunkStreamWrapper:
 
     _maximum_allowed_size: ArchiveExtractionThresholds
     _trailing_data: bytes = b''
-    _chunks: Iterator[bytes] = None
+    _chunks: Iterator[bytes]
 
     def __init__(self, chunks: Iterator[bytes], maximum_file_size: int = None):
         assert chunks
@@ -50,7 +50,10 @@ class FileChunkStreamWrapper:
     def __iter__(self):
         for chunk in self._chunks:
             self._add_chunk_to_size(chunk)
-            yield chunk
+            if not chunk:
+                continue
+            else:
+                yield chunk
 
     def _add_chunk_to_size(self, chunk):
         self.total_size += len(chunk)
@@ -67,10 +70,11 @@ class FileChunkStreamWrapper:
                 content += chunk
         else:
             # iterate chunks until we've read at least `size` amount of data
-            while len(content) <= size:
-                chunk = next(self._chunks)
+            for chunk in self._chunks:
                 self._add_chunk_to_size(chunk)
                 content += chunk
+                if len(content) > size:
+                    break
 
             # Trim off any data that is past the provided `size` and hold on to it for subsequent `read` calls
             if len(content) > size:
@@ -83,10 +87,12 @@ class FileChunkStreamWrapper:
         """
         Returns a stream of lines from self._chunks.
         """
+        trailing_data = None
+
         for chunk in self._chunks:
             self._add_chunk_to_size(chunk)
-            if self._trailing_data:
-                chunk = self._trailing_data + chunk
+            if trailing_data is not None:
+                chunk = trailing_data + chunk
 
             lines = chunk.splitlines()
 
@@ -94,15 +100,15 @@ class FileChunkStreamWrapper:
             #  if it is, then that means that our last line did not end in a newline, and therefore we need to hang
             #  on to that line for the next iteration.
             if lines and lines[-1] and chunk and lines[-1][-1] == chunk[-1]:
-                self._trailing_data = lines.pop()
+                trailing_data = lines.pop()
             else:
-                self._trailing_data = b''
+                trailing_data = None
 
             for line in lines:
                 yield line
 
-        if self._trailing_data:
-            yield self._trailing_data
+        if trailing_data is not None:
+            yield trailing_data
 
 
 class ZipArchiveMemberStreamWrapper(FileChunkStreamWrapper):
@@ -230,7 +236,6 @@ class AbstractFileDataLoader(AbstractFileReader, DataLoader, abc.ABC):
                     size_left -= len(c)
                     if size_left <= 0:
                         raise AssertionError("This archive is too big")
-                    continue
                 continue
 
             wrapped_bytes = ZipArchiveMemberStreamWrapper(chunks, size_left)
