@@ -16,33 +16,24 @@ from tests import ROOT_DIR
 BOTO_CLIENT_STUB_TARGET = "boto3.client"
 S3_GET_OBJECT_CONTENT_TYPE = "application/octet-stream"
 
-@pytest.mark.parametrize(
-    "event_log_url",
-    [
-        "s3://sync-test-artifacts/airlinedelay/jb-42K1E16/emr.zip",
-        "s3://sync-test-artifacts/airlinedelay/jb-42K1E16/",
-    ],
-)
-@pytest.mark.parametrize(
-    "event_log_file_archive,event_log_s3_dir",
-    [(Path(ROOT_DIR, "logs", "emr.zip"), "airlinedelay/jb-42K1E16/")],
-)
-def test_emr_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir, mocker):
-    parsed_event_log_url = urlparse(event_log_url)
+
+def assert_file_parsed_properly(eventlog_url, eventlog_file, eventlog_s3_dir, create_spark_app_fn, mocker):
+    parsed_event_log_url = urlparse(eventlog_url)
+
     s3_bucket = parsed_event_log_url.netloc
     s3_prefix = parsed_event_log_url.path.lstrip("/")
 
     s3 = boto.client("s3")
     stubber = Stubber(s3)
-    s3_key = event_log_s3_dir + event_log_file_archive.name
-    s3_object_size = event_log_file_archive.stat().st_size
+    s3_key = eventlog_s3_dir + eventlog_file.name
+    s3_object_size = eventlog_file.stat().st_size
     stubber.add_response(
         "list_objects_v2",
         {"Contents": [{"Key": s3_key, "Size": s3_object_size}]},
         {"Bucket": s3_bucket, "Prefix": s3_prefix},
     )
 
-    with open(event_log_file_archive, "rb") as fobj:
+    with open(eventlog_file, "rb") as fobj:
         file_content = fobj.read()
         file_bytes = io.BytesIO(file_content)
         file_size = len(file_content)
@@ -59,12 +50,30 @@ def test_emr_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir
 
     with stubber:
         mocker.patch(BOTO_CLIENT_STUB_TARGET, new=lambda _: s3)
-        spark_app = create_spark_application(spark_eventlog_path=str(event_log_url))
+        spark_app = create_spark_app_fn()
 
     stubber.assert_no_pending_responses()
-    assert spark_app is not None
     metadata = spark_app.metadata
-    assert metadata['application_info']['spark_version'] is not None\
+    assert spark_app is not None
+    assert metadata['application_info']['spark_version'] is not None
+
+
+
+@pytest.mark.parametrize(
+    "event_log_url",
+    [
+        "s3://sync-test-artifacts/airlinedelay/jb-42K1E16/emr.zip",
+        "s3://sync-test-artifacts/airlinedelay/jb-42K1E16/",
+    ],
+)
+@pytest.mark.parametrize(
+    "event_log_file_archive,event_log_s3_dir",
+    [(Path(ROOT_DIR, "logs", "emr.zip"), "airlinedelay/jb-42K1E16/")],
+)
+def test_emr_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir, mocker):
+    create_app = lambda: create_spark_application(spark_eventlog_path=str(event_log_url))
+    assert_file_parsed_properly(event_log_url, event_log_file_archive, event_log_s3_dir, create_app, mocker)
+
 
 @pytest.mark.parametrize(
     "event_log_url",
@@ -78,43 +87,9 @@ def test_emr_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir
     [(Path(ROOT_DIR, "logs", "similarity_parsed.json.gz"), "/foo/bar-baz/")],
 )
 def test_parsed_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir, mocker):
-    parsed_event_log_url = urlparse(event_log_url)
-    s3_bucket = parsed_event_log_url.netloc
-    s3_prefix = parsed_event_log_url.path.lstrip("/")
+    create_app = lambda: create_spark_application(spark_eventlog_parsed_path=str(event_log_url))
+    assert_file_parsed_properly(event_log_url, event_log_file_archive, event_log_s3_dir, create_app, mocker)
 
-    s3 = boto.client("s3")
-    stubber = Stubber(s3)
-    s3_key = event_log_s3_dir + event_log_file_archive.name
-    s3_object_size = event_log_file_archive.stat().st_size
-    stubber.add_response(
-        "list_objects_v2",
-        {"Contents": [{"Key": s3_key, "Size": s3_object_size}]},
-        {"Bucket": s3_bucket, "Prefix": s3_prefix},
-    )
-
-    with open(event_log_file_archive, "rb") as fobj:
-        file_content = fobj.read()
-        file_bytes = io.BytesIO(file_content)
-        file_size = len(file_content)
-        expected_params = {"Bucket": s3_bucket, "Key": s3_key}
-        stubber.add_response(
-            "get_object",
-            {
-                "ContentType": S3_GET_OBJECT_CONTENT_TYPE,
-                "ContentLength": file_size,
-                "Body": StreamingBody(file_bytes, file_size)
-            },
-            expected_params,
-        )
-
-    with stubber:
-        mocker.patch(BOTO_CLIENT_STUB_TARGET, new=lambda _: s3)
-        spark_app = create_spark_application(spark_eventlog_parsed_path=str(event_log_url))
-
-    stubber.assert_no_pending_responses()
-    assert spark_app is not None
-    metadata = spark_app.metadata
-    assert metadata['application_info']['spark_version'] is not None
 
 @pytest.mark.parametrize(
     "event_log_url",
@@ -128,43 +103,8 @@ def test_parsed_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_
     [(Path(ROOT_DIR, "logs", "databricks.json"), "/foo/bar-baz/")],
 )
 def test_raw_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir, mocker):
-    parsed_event_log_url = urlparse(event_log_url)
-    s3_bucket = parsed_event_log_url.netloc
-    s3_prefix = parsed_event_log_url.path.lstrip("/")
-
-    s3 = boto.client("s3")
-    stubber = Stubber(s3)
-    s3_key = event_log_s3_dir + event_log_file_archive.name
-    s3_object_size = event_log_file_archive.stat().st_size
-    stubber.add_response(
-        "list_objects_v2",
-        {"Contents": [{"Key": s3_key, "Size": s3_object_size}]},
-        {"Bucket": s3_bucket, "Prefix": s3_prefix},
-    )
-
-    with open(event_log_file_archive, "rb") as fobj:
-        file_content = fobj.read()
-        file_bytes = io.BytesIO(file_content)
-        file_size = len(file_content)
-        expected_params = {"Bucket": s3_bucket, "Key": s3_key}
-        stubber.add_response(
-            "get_object",
-            {
-                "ContentType": S3_GET_OBJECT_CONTENT_TYPE,
-                "ContentLength": file_size,
-                "Body": StreamingBody(file_bytes, file_size)
-            },
-            expected_params,
-        )
-
-    with stubber:
-        mocker.patch(BOTO_CLIENT_STUB_TARGET, new=lambda _: s3)
-        spark_app = create_spark_application(spark_eventlog_path=str(event_log_url))
-
-    stubber.assert_no_pending_responses()
-    assert spark_app is not None
-    metadata = spark_app.metadata
-    assert metadata['application_info']['spark_version'] is not None
+    create_app = lambda: create_spark_application(spark_eventlog_path=str(event_log_url))
+    assert_file_parsed_properly(event_log_url, event_log_file_archive, event_log_s3_dir, create_app, mocker)
 
 
 @pytest.mark.parametrize(
