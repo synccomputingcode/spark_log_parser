@@ -3,8 +3,9 @@ import gzip
 import tarfile
 import logging
 
-from io import IOBase, BufferedIOBase
+from io import BufferedIOBase
 from pathlib import Path
+from typing import Iterator
 from urllib.parse import ParseResult
 
 from aiodataloader import DataLoader
@@ -97,6 +98,8 @@ class FileChunkStreamWrapper:
         if pending is not None:
             yield pending
 
+class ZipArchiveMemberStreamWrapper(FileChunkStreamWrapper):
+    """Just an alias for FileChunkStreamWrapper for use when extracting Zip archive members using stream-unzip"""
 
 class ZipArchiveMemberWrapper(FileChunkStreamWrapper):
     pass
@@ -122,7 +125,6 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
     """
 
     cache = False
-    logger = None
 
     _extraction_thresholds: ArchiveExtractionThresholds
 
@@ -142,7 +144,7 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
         filename = filename.lower()
         return any([name in filename for name in FILE_SKIP_PATTERNS])
 
-    def read_tgz_archive(self, archive: tarfile.TarFile):
+    def read_tgz_archive(self, archive: tarfile.TarFile)  -> Iterator[bytes]:
         """
 
         """
@@ -194,28 +196,21 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
         of the whole file (or something else entirely)
         """
 
-    @abc.abstractmethod
-    def load_item(self, filepath: str | ParseResult):
-        """
-        Since the concrete Loader may be fetching data from disparate data sources, this method should be
-        responsible for grabbing the raw data stream for each file that may then be passed to extract().
-
-        Alternatively, if the file is present locally on the machine, just passing a filepath to extract()
-        will suffice
-        """
-
-    def extract_directory(self, directory: Path):
+    def extract_directory(self, directory: Path) -> Iterator[bytes]:
         for path in directory.iterdir():
             yield from self.extract(path)
 
-    def extract(self, filepath: Path, file_stream: BufferedIOBase = None):
+    def extract(self, filepath: Path, file_stream: BufferedIOBase = None) -> Iterator[bytes]:
         """
+        This method takes a filepath and potentially an already-open file_stream (if the filepath cannot be found
+        locally, the file_stream *must* be provided). Returns an Iterator of the underlying bytes of the file that
+        is fully decompressed/unzipped/untarred/etc., and ready to be parsed into some useful representation.
 
+        For archives, this Iterator will contain the bytes of all files present, except those that may be skipped (as
+        defined in should_skip_file()).
         """
         if file_stream is None and filepath.is_dir():
             yield from self.extract_directory(filepath)
-
-        to_open = file_stream if file_stream is not None else filepath
 
         match filepath.suffixes:
             case [".tgz"] | [".tar", ".gz"]:
@@ -260,33 +255,17 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
                         yield from self.read_file_stream(file)
 
             case _:
-                # TODO - is this the correct Error type?
                 raise ValueError(f"Unknown file format {''.join(filepath.suffixes)}")
+
+    @abc.abstractmethod
+    def load_item(self, filepath: str | ParseResult):
+        """
+        Since the concrete Loader may be fetching data from disparate data sources, this method should be
+        responsible for grabbing the raw data stream for each file that may then be passed to extract().
+
+        Alternatively, if the file is present locally on the machine, just passing a filepath to extract()
+        will suffice
+        """
 
     async def batch_load_fn(self, keys: list[str]):
         return [self.load_item(filepath) for filepath in keys]
-
-
-class AbstractBlobDataLoader(AbstractFileDataLoader, abc.ABC):
-    """
-    Abstract class that implements the various read_* methods from AbstractFileDataLoader in such a way
-    as to yield full "blobs" of data from the underlying file source. Useful for loading e.g. JSON files
-    """
-
-    cache = False
-
-    def read_file_stream(self, file):
-        yield file.read()
-
-
-class AbstractLinesDataLoader(AbstractFileDataLoader, abc.ABC):
-    """
-    Abstract class that implements the various read_* methods from AbstractFileDataLoader in such a way
-    as to yield individual lines of the underlying file source. Useful for loading e.g. JSON Lines or CSV files
-    """
-
-    cache = False
-
-    def read_file_stream(self, file):
-        for line in file:
-            yield line

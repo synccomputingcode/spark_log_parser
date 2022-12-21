@@ -37,9 +37,6 @@ class SparkApplication:
     taskData: pd.DataFrame = None
     accumData: pd.DataFrame = None
 
-    stdout: str = None
-    debug: bool = False
-
     def __init__(self):
         return
 
@@ -339,10 +336,7 @@ class UnparsedLogSparkApplicationLoader(
         """ """
         raw_datas = await self._json_lines_loader.load_many(keys)
 
-        app_models = [
-            ApplicationModel(log_lines=raw_data, stdoutpath=self.stdout_path, debug=self.debug)
-            for raw_data in raw_datas
-        ]
+        app_models = [ApplicationModel(log_lines=raw_data) for raw_data in raw_datas]
 
         for app_model in app_models:
             # TODO - probably somewhere better to put this...
