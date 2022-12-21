@@ -8,13 +8,13 @@ from spark_log_parser.loaders.https import HTTPFileLinesDataLoader, HTTPFileBlob
 from spark_log_parser.loaders.local_file import LocalFileBlobDataLoader, LocalFileLinesDataLoader
 from spark_log_parser.loaders.s3 import S3FileBlobDataLoader, S3FileLinesDataLoader
 
-
 RawJSONBlobDataLoader = TypeVar("BlobDataLoader", LocalFileBlobDataLoader, S3FileBlobDataLoader, HTTPFileBlobDataLoader)
 
 logger = logging.getLogger("JSONLoaders")
 
 
 class JSONBlobDataLoader(DataLoader, Generic[RawJSONBlobDataLoader]):
+    cache = False
     blob_data_loader: RawJSONBlobDataLoader
 
     def __init__(self, blob_data_loader: RawJSONBlobDataLoader, **kwargs):

@@ -6,7 +6,7 @@ from urllib.parse import ParseResult, urlparse
 
 from botocore.response import StreamingBody
 
-from spark_log_parser.loaders import AbstractFileDataLoader, AbstractBlobDataLoader, AbstractLinesDataLoader, \
+from spark_log_parser.loaders import AbstractFileDataLoader, BlobFileReaderMixin, LinesFileReaderMixin, \
     FileChunkStreamWrapper
 
 
@@ -94,10 +94,14 @@ class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
             yield from self.extract(Path(content["Key"]), filestream)
 
 
-class S3FileBlobDataLoader(AbstractS3FileDataLoader, AbstractBlobDataLoader):
-    pass
+class S3FileBlobDataLoader(AbstractS3FileDataLoader, BlobFileReaderMixin):
+    """
+    Simple HTTP loader that returns the full file as a blob of data.
+    """
 
 
-class S3FileLinesDataLoader(AbstractS3FileDataLoader, AbstractLinesDataLoader):
-    pass
+class S3FileLinesDataLoader(AbstractS3FileDataLoader, LinesFileReaderMixin):
+    """
+    Simple HTTP loader that returns the file as a stream of lines (delimited by `\n`).
+    """
     

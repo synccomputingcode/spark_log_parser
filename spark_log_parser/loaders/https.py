@@ -4,7 +4,7 @@ from pathlib import Path
 import requests
 from urllib.parse import ParseResult, urlparse
 
-from spark_log_parser.loaders import AbstractFileDataLoader, AbstractBlobDataLoader, AbstractLinesDataLoader
+from spark_log_parser.loaders import AbstractFileDataLoader, BlobFileReaderMixin, LinesFileReaderMixin
 
 
 class AbstractHTTPFileDataLoader(AbstractFileDataLoader, abc.ABC):
@@ -29,15 +29,13 @@ class AbstractHTTPFileDataLoader(AbstractFileDataLoader, abc.ABC):
         yield from self.extract(Path(url), stream)
 
 
-class HTTPFileBlobDataLoader(AbstractHTTPFileDataLoader, AbstractBlobDataLoader):
+class HTTPFileBlobDataLoader(AbstractHTTPFileDataLoader, BlobFileReaderMixin):
     """
     Simple HTTP loader that returns the full file as a blob of data.
     """
-    pass
 
 
-class HTTPFileLinesDataLoader(AbstractHTTPFileDataLoader, AbstractLinesDataLoader):
+class HTTPFileLinesDataLoader(AbstractHTTPFileDataLoader, LinesFileReaderMixin):
     """
-    Simple HTTP loader that returns the file as a stream of lines (delimited by `\n`)
+    Simple HTTP loader that returns the file as a stream of lines (delimited by `\n`).
     """
-    pass

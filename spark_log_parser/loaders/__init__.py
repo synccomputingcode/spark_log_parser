@@ -108,11 +108,40 @@ class FileChunkStreamWrapper:
 class ZipArchiveMemberStreamWrapper(FileChunkStreamWrapper):
     """Just an alias for FileChunkStreamWrapper for use when extracting Zip archive members using stream-unzip"""
 
-class ZipArchiveMemberWrapper(FileChunkStreamWrapper):
-    pass
+
+class AbstractFileReader(abc.ABC):
+    """
+    This abstract class provides a single method, read_file_stream(), which is intended to be used by classes that
+    are trying to extract some data from a FileChunkStreamWrapper(). This is intended to allow concrete classes to
+    have some flexibility in the manner in which they yield data from the underlying stream, whether that be raw chunks,
+    lines, or as an entire blob (or something else entirely!)
+    """
+    @abc.abstractmethod
+    def read_file_stream(self, file: FileChunkStreamWrapper) -> Iterator[bytes]:
+        pass
 
 
-class AbstractFileDataLoader(abc.ABC, DataLoader):
+class LinesFileReaderMixin(AbstractFileReader):
+    """
+    Implementation of AbstractFileReader that yields data from the underlying file as well-formed lines. Useful for
+    parsing e.g. JSON Lines or CSV files.
+    """
+
+    def read_file_stream(self, file: FileChunkStreamWrapper):
+        yield from file.iter_lines()
+
+
+class BlobFileReaderMixin(AbstractFileReader):
+    """
+    Implementation of AbstractFileReader that yield data from the underlying file as a singular blob. Useful for
+    parsing e.g. JSON files.
+    """
+
+    def read_file_stream(self, file: FileChunkStreamWrapper):
+        yield file.read()
+
+
+class AbstractFileDataLoader(AbstractFileReader, DataLoader, abc.ABC):
     """
     Base class for loading files over various transport mechanisms. This commits to streaming file data as much as
     possible, so that we are not holding on to full representations of large files in-memory. This means that any
