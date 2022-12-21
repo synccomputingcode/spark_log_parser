@@ -12,6 +12,14 @@ from stream_unzip import stream_unzip
 
 FILE_SKIP_PATTERNS = [".DS_Store".lower(), "__MACOSX".lower(), "/."]
 
+logger = logging.getLogger("Loaders")
+
+
+class ArchiveExtractionThresholds:
+    entries = 100
+    size = 5000000000
+    ratio = 100
+
 
 class FileChunkStreamWrapper:
     """
@@ -116,10 +124,12 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
     cache = False
     logger = None
 
-    def __init__(self):
+    _extraction_thresholds: ArchiveExtractionThresholds
+
+    def __init__(self, extraction_thresholds: ArchiveExtractionThresholds = None):
         super().__init__()
-        # Get a logger with the name of the concrete class
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self._extraction_thresholds = extraction_thresholds or ArchiveExtractionThresholds()
+
 
     @staticmethod
     def should_skip_file(filename: str) -> bool:

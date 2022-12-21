@@ -11,6 +11,8 @@ from spark_log_parser.loaders.s3 import S3FileBlobDataLoader, S3FileLinesDataLoa
 
 RawJSONBlobDataLoader = TypeVar("BlobDataLoader", LocalFileBlobDataLoader, S3FileBlobDataLoader, HTTPFileBlobDataLoader)
 
+logger = logging.getLogger("JSONLoaders")
+
 
 class JSONBlobDataLoader(DataLoader, Generic[RawJSONBlobDataLoader]):
     blob_data_loader: RawJSONBlobDataLoader
@@ -33,7 +35,8 @@ class JSONLinesDataLoader(DataLoader, Generic[RawJSONLinesDataLoader]):
     cache = False
     lines_data_loader: RawJSONLinesDataLoader
 
-    def yield_json_lines(self, filename, lines):
+    @staticmethod
+    def yield_json_lines(filename, lines):
         num_bad_lines_seen = 0
         for line in lines:
             try:
@@ -51,11 +54,10 @@ class JSONLinesDataLoader(DataLoader, Generic[RawJSONLinesDataLoader]):
                 continue
 
         if num_bad_lines_seen > 0:
-            self.logger.info(f"Failed to parse {num_bad_lines_seen} JSON lines in top-level file: {filename}")
+            logger.info(f"Failed to parse {num_bad_lines_seen} JSON lines in top-level file: {filename}")
 
     def __init__(self, lines_data_loader: RawJSONLinesDataLoader, **kwargs):
         super().__init__(**kwargs)
-        self.logger = logging.getLogger(self.__class__.__name__)
         self.lines_data_loader = lines_data_loader
 
     async def batch_load_fn(self, keys):

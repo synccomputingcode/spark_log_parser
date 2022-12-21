@@ -8,6 +8,7 @@ from urllib.parse import unquote
 
 import spark_log_parser
 
+logging.basicConfig()
 logging.captureWarnings(True)
 
 from spark_log_parser.eventlog import EventLogBuilder  # noqa: E402
