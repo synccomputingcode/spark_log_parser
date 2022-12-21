@@ -19,13 +19,13 @@ class AbstractLocalFileDataLoader(AbstractFileDataLoader, ABC):
         yield from self.extract(path)
 
 
-class LocalFileBlobDataLoader(AbstractLocalFileDataLoader, BlobFileReaderMixin):
+class LocalFileBlobDataLoader(BlobFileReaderMixin, AbstractLocalFileDataLoader):
     """
     Simple file loader that returns the full file as a blob of data.
     """
 
 
-class LocalFileLinesDataLoader(AbstractLocalFileDataLoader, LinesFileReaderMixin):
+class LocalFileLinesDataLoader(LinesFileReaderMixin, AbstractLocalFileDataLoader):
     """
     Simple file loader that returns the full file as a stream of lines (delimited by `\n`).
     """

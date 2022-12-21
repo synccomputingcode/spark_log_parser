@@ -123,40 +123,7 @@ class ZipArchiveMemberStreamWrapper(FileChunkStreamWrapper):
     """Just an alias for FileChunkStreamWrapper for use when extracting Zip archive members using stream-unzip"""
 
 
-class AbstractFileReader(abc.ABC):
-    """
-    This abstract class provides a single method, read_file_stream(), which is intended to be used by classes that
-    are trying to extract some data from a FileChunkStreamWrapper(). This is intended to allow concrete classes to
-    have some flexibility in the manner in which they yield data from the underlying stream, whether that be raw chunks,
-    lines, or as an entire blob (or something else entirely!)
-    """
-
-    @abc.abstractmethod
-    def read_file_stream(self, file: FileChunkStreamWrapper) -> Iterator[bytes]:
-        pass
-
-
-class LinesFileReaderMixin(AbstractFileReader):
-    """
-    Implementation of AbstractFileReader that yields data from the underlying file as well-formed lines. Useful for
-    parsing e.g. JSON Lines or CSV files.
-    """
-
-    def read_file_stream(self, file: FileChunkStreamWrapper):
-        yield from file.iter_lines()
-
-
-class BlobFileReaderMixin(AbstractFileReader):
-    """
-    Implementation of AbstractFileReader that yield data from the underlying file as a singular blob. Useful for
-    parsing e.g. JSON files.
-    """
-
-    def read_file_stream(self, file: FileChunkStreamWrapper):
-        yield file.read()
-
-
-class AbstractFileDataLoader(AbstractFileReader, DataLoader, abc.ABC):
+class AbstractFileDataLoader(DataLoader, abc.ABC):
     """
     Base class for loading files over various transport mechanisms. This commits to streaming file data as much as
     possible, so that we are not holding on to full representations of large files in-memory. This means that any
@@ -258,6 +225,15 @@ class AbstractFileDataLoader(AbstractFileReader, DataLoader, abc.ABC):
         for path in directory.iterdir():
             yield from self.extract(path)
 
+    @staticmethod
+    @abc.abstractmethod
+    def read_file_stream(file: FileChunkStreamWrapper) -> Iterator[bytes]:
+        """
+        This method will be called once we have reached a file that is fully uncompressed/untarred/etc.
+        This is intended to allow concrete classes to have flexibility in the manner in which they yield data from the
+        underlying file stream, whether that be raw chunks, lines, or as an entire blob (or something else entirely!)
+        """
+
     def extract(self, filepath: Path, file_stream: BufferedIOBase = None) -> Iterator[bytes]:
         """
         This method takes a filepath and potentially an already-open file_stream (if the filepath cannot be found
@@ -320,7 +296,7 @@ class AbstractFileDataLoader(AbstractFileReader, DataLoader, abc.ABC):
                 raise ValueError(f"Unknown file format {''.join(filepath.suffixes)}")
 
     @abc.abstractmethod
-    def load_item(self, filepath: str | ParseResult):
+    def load_item(self, filepath: str | ParseResult) -> Iterator[bytes]:
         """
         Since the concrete Loader may be fetching data from disparate data sources, this method should be
         responsible for grabbing the raw data stream for each file that may then be passed to extract().
@@ -329,5 +305,27 @@ class AbstractFileDataLoader(AbstractFileReader, DataLoader, abc.ABC):
         will suffice
         """
 
-    async def batch_load_fn(self, keys: list[str]):
+    async def batch_load_fn(self, keys: list[str]) -> list[Iterator[bytes]]:
         return [self.load_item(filepath) for filepath in keys]
+
+
+class LinesFileReaderMixin:
+    """
+    Mixin that provides an implementation of `read_file_stream` for implementors of AbstractFileDataLoader that yields
+    data from the underlying file as well-formed lines. Useful for parsing e.g. JSON Lines or CSV files.
+    """
+
+    @staticmethod
+    def read_file_stream(file: FileChunkStreamWrapper):
+        yield from file.iter_lines()
+
+
+class BlobFileReaderMixin:
+    """
+    Mixin that provides an implementation of `read_file_stream` for implementors of AbstractFileDataLoader that yields
+    data from the underlying file as a singular blob. Useful for parsing e.g. JSON files.
+    """
+
+    @staticmethod
+    def read_file_stream(file: FileChunkStreamWrapper):
+        yield file.read()

@@ -78,13 +78,13 @@ class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
             yield from self.extract(Path(content["Key"]), filestream)
 
 
-class S3FileBlobDataLoader(AbstractS3FileDataLoader, BlobFileReaderMixin):
+class S3FileBlobDataLoader(BlobFileReaderMixin, AbstractS3FileDataLoader):
     """
     Simple HTTP loader that returns the full file as a blob of data.
     """
 
 
-class S3FileLinesDataLoader(AbstractS3FileDataLoader, LinesFileReaderMixin):
+class S3FileLinesDataLoader(LinesFileReaderMixin, AbstractS3FileDataLoader):
     """
     Simple HTTP loader that returns the file as a stream of lines (delimited by `\n`).
     """

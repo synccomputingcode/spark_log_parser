@@ -29,13 +29,13 @@ class AbstractHTTPFileDataLoader(AbstractFileDataLoader, abc.ABC):
         yield from self.extract(Path(url), stream)
 
 
-class HTTPFileBlobDataLoader(AbstractHTTPFileDataLoader, BlobFileReaderMixin):
+class HTTPFileBlobDataLoader(BlobFileReaderMixin, AbstractHTTPFileDataLoader):
     """
     Simple HTTP loader that returns the full file as a blob of data.
     """
 
 
-class HTTPFileLinesDataLoader(AbstractHTTPFileDataLoader, LinesFileReaderMixin):
+class HTTPFileLinesDataLoader(LinesFileReaderMixin, AbstractHTTPFileDataLoader):
     """
     Simple HTTP loader that returns the file as a stream of lines (delimited by `\n`).
     """
