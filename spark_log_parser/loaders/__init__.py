@@ -286,7 +286,8 @@ class AbstractFileDataLoader(AbstractFileReader, DataLoader, abc.ABC):
                 with gzip.open(to_open) as file:
                     # We may see files like {name}.zip.gz/.json.gz, so make sure we handle that appropriately
                     if len(suffixes) == 1:
-                        yield from self.read_file_stream(file)
+                        wrapped = FileChunkStreamWrapper(file)
+                        yield from self.read_file_stream(wrapped)
                     else:
                         new_path = Path(str(filepath).removesuffix(".gz"))
                         yield from self.extract(new_path, file)
@@ -295,10 +296,12 @@ class AbstractFileDataLoader(AbstractFileReader, DataLoader, abc.ABC):
             case [".json"] | [".log"] | []:
                 logger.info(f"Yielding raw file: {filepath}")
                 if file_stream:
-                    yield from self.read_file_stream(file_stream)
+                    wrapped = FileChunkStreamWrapper(file_stream)
+                    yield from self.read_file_stream(wrapped)
                 else:
-                    with open(to_open, "rb") as file:
-                        yield from self.read_file_stream(file)
+                    with open(filepath, "rb") as file:
+                        wrapped = FileChunkStreamWrapper(file)
+                        yield from self.read_file_stream(wrapped)
 
             case _:
                 raise ValueError(f"Unknown file format {''.join(filepath.suffixes)}")
