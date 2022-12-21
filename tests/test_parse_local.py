@@ -3,8 +3,7 @@ from pathlib import Path
 import pytest
 
 from spark_log_parser.parsing_models.application_model_v2 import create_spark_application
-from tests import parsed_files, assert_all_files_identical, PARSED_KEYS, APP_NAME_INCORRECT_MESSAGE, \
-    PARSED_KEYS_MISSING_MESSAGE
+from tests import assert_all_files_equivalent, PARSED_KEYS, APP_NAME_INCORRECT_MESSAGE, PARSED_KEYS_MISSING_MESSAGE
 
 
 def get_spark_app_from_raw_log(event_log_path):
@@ -13,7 +12,6 @@ def get_spark_app_from_raw_log(event_log_path):
 
 def get_parsed_log(event_log_path):
     return get_spark_app_from_raw_log(event_log_path).to_dict()
-
 
 
 def test_simple_databricks_log():
@@ -57,7 +55,7 @@ def test_simple_emr_log(parsed_files):
                          [(Path("tests", "logs", "emr_missing_sql_events.zip").resolve(), get_spark_app_from_raw_log)],
                          indirect=["parsed_files"])
 def test_emr_missing_sql_events(parsed_files):
-    assert_all_files_identical([spark_app.to_dict() for spark_app in parsed_files])
+    assert_all_files_equivalent([spark_app.to_dict() for spark_app in parsed_files])
 
     for spark_app in parsed_files:
         sql_data = spark_app.sqlData
@@ -69,7 +67,7 @@ def test_emr_missing_sql_events(parsed_files):
                          [(Path("tests", "logs", "databricks-rollover-messy.zip").resolve(), get_parsed_log)],
                          indirect=["parsed_files"])
 def test_databricks_rollover(parsed_files):
-    assert_all_files_identical(parsed_files)
+    assert_all_files_equivalent(parsed_files)
 
 
 def test_parsed_log():

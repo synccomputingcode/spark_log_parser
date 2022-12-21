@@ -3,8 +3,6 @@ import zipfile
 import tarfile
 import os.path
 import logging
-import pytest
-from pathlib import Path
 from pprint import pformat
 from deepdiff import DeepDiff
 
@@ -36,7 +34,7 @@ APP_NAME_INCORRECT_MESSAGE = "Application name does not match expected value"
 PARSED_KEYS_MISSING_MESSAGE = "Not all keys present in parsed eventlog"
 
 
-def assert_all_files_identical(parsed_files):
+def assert_all_files_equivalent(parsed_files):
     """
     Given a list of already-parsed eventlog file dictionaries (i.e. SparkApplication.to_dict()), assert that all
     dictionaries are meaningfully the same, ignoring ordering of keys as is applicable

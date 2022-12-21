@@ -9,7 +9,7 @@ from spark_log_parser.loaders.json import JSONLinesDataLoader, JSONBlobDataLoade
 from spark_log_parser.parsing_models.application_model_v2 import \
     UnparsedLogSparkApplicationLoader, SparkApplication, \
     ParsedLogSparkApplicationLoader
-from tests import parsed_files, assert_all_files_identical, PARSED_KEYS
+from tests import assert_all_files_equivalent, PARSED_KEYS
 
 
 def get_spark_app(eventlog_local_path) -> SparkApplication:
@@ -42,7 +42,7 @@ def get_parsed_log(eventlog_local_path) -> dict:
                          [(Path("tests", "logs", "emr.zip").resolve(), get_parsed_log)],
                          indirect=["parsed_files"])
 def test_simple_emr_log(parsed_files):
-    assert_all_files_identical(parsed_files)
+    assert_all_files_equivalent(parsed_files)
 
 
 @pytest.mark.parametrize("parsed_files",
@@ -55,23 +55,23 @@ def test_emr_missing_sql_events(parsed_files):
         assert list(sql_data.index.values) == [0, 2, 3, 5, 6, 7, 8]
 
     parsed_apps = [spark_app.to_dict() for spark_app in parsed_files]
-    assert_all_files_identical(parsed_apps)
+    assert_all_files_equivalent(parsed_apps)
 
 
 @pytest.mark.parametrize("parsed_files",
                          [(Path("tests", "logs", "databricks.zip").resolve(), get_parsed_log)],
                          indirect=["parsed_files"])
 def test_simple_databricks_log(parsed_files):
-    assert_all_files_identical(parsed_files)
+    assert_all_files_equivalent(parsed_files)
 
 
 @pytest.mark.parametrize("parsed_files",
                          [(Path("tests", "logs", "databricks-rollover-messy.zip").resolve(), get_parsed_log)],
                          indirect=["parsed_files"])
 def test_databricks_rollover_log(parsed_files):
-    assert_all_files_identical(parsed_files)
+    assert_all_files_equivalent(parsed_files)
 
-    # For this rollover log test case, we know that there are 71 jobs spread across the rollover logs. Therefore, in
+    # For this rollover log tes t case, we know that there are 71 jobs spread across the rollover logs. Therefore, in
     #  order to assert that we read all of them, we can just check that job_ids 0 - 71 exist in the SparkApplication's
     #  jobData. If some are missing, that likely means we missed at least one of the files
     for logfile in parsed_files:
