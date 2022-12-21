@@ -36,32 +36,41 @@ class FileChunkStreamWrapper:
     Note #2 - once `chunks` is consumed, calls to read/lines will return empty byte buffers
     """
 
-    _trailing_data: bytes = b''
-    _chunks = None
+    total_size: int = 0
 
-    def __init__(self, chunks):
+    _maximum_allowed_size: ArchiveExtractionThresholds
+    _trailing_data: bytes = b''
+    _chunks: Iterator[bytes] = None
+
+    def __init__(self, chunks: Iterator[bytes], maximum_file_size: int = None):
         assert chunks
         self._chunks = chunks
+        self._maximum_allowed_size = maximum_file_size
 
     def __iter__(self):
-        """
-        The implementation of
-        """
-        return self.readlines()
+        for chunk in self._chunks:
+            self._add_chunk_to_size(chunk)
+            yield chunk
 
-    def read(self, size=-1):
+    def _add_chunk_to_size(self, chunk):
+        self.total_size += len(chunk)
+        if self._maximum_allowed_size is not None and self.total_size > self._maximum_allowed_size:
+            raise AssertionError("This archive is too big")
+
+    def read(self, size=-1) -> bytes:
         content = self._trailing_data
         self._trailing_data = b''
 
         if not size or size == -1:
             for chunk in self._chunks:
+                self._add_chunk_to_size(chunk)
                 content += chunk
         else:
             # iterate chunks until we've read at least `size` amount of data
-            for chunk in self._chunks:
+            while len(content) <= size:
+                chunk = next(self._chunks)
+                self._add_chunk_to_size(chunk)
                 content += chunk
-                if len(content) >= size:
-                    break
 
             # Trim off any data that is past the provided `size` and hold on to it for subsequent `read` calls
             if len(content) > size:
@@ -70,33 +79,31 @@ class FileChunkStreamWrapper:
 
         return content
 
-    def readlines(self):
+    def iter_lines(self) -> Iterator[bytes]:
         """
-        Returns a stream of lines from self.chunks. This differs from many readlines() implementations, which tend to
-        read the whole file into memory and return a list of the lines
+        Returns a stream of lines from self._chunks.
         """
-        pending = None
-
         for chunk in self._chunks:
-
-            if pending is not None:
-                chunk = pending + chunk
+            self._add_chunk_to_size(chunk)
+            if self._trailing_data:
+                chunk = self._trailing_data + chunk
 
             lines = chunk.splitlines()
 
-            # Check if the last item in our last line is the same as the last item in our original un-split line.
-            #  If it is, that means our original chunk did not end in a newline and we need to hang on to that data
-            #  for processing the next chunk
+            # This condition checks if the last byte in our last line is the same as the last byte of our chunk -
+            #  if it is, then that means that our last line did not end in a newline, and therefore we need to hang
+            #  on to that line for the next iteration.
             if lines and lines[-1] and chunk and lines[-1][-1] == chunk[-1]:
-                pending = lines.pop()
+                self._trailing_data = lines.pop()
             else:
-                pending = None
+                self._trailing_data = b''
 
             for line in lines:
                 yield line
 
-        if pending is not None:
-            yield pending
+        if self._trailing_data:
+            yield self._trailing_data
+
 
 class ZipArchiveMemberStreamWrapper(FileChunkStreamWrapper):
     """Just an alias for FileChunkStreamWrapper for use when extracting Zip archive members using stream-unzip"""
@@ -146,10 +153,12 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
 
     def read_tgz_archive(self, archive: tarfile.TarFile)  -> Iterator[bytes]:
         """
-
+        Utility for unpacking a tarball, asserting that the contents of that tarball fall within our file-size
+        constraints
         """
-        # TODO - validate size
-        size = 0
+        num_files = 0
+        size_left = self._extraction_thresholds.size
+
         for tarinfo in archive:
             if self.should_skip_file(tarinfo.name):
                 continue
@@ -157,44 +166,51 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
             if tarinfo.isdir():
                 continue
 
-            # TODO - Size assertions?
-            size += tarinfo.size
+            num_files += 1
+            if num_files > self._extraction_thresholds.entries:
+                raise AssertionError("Too many files present in this archive.")
 
-            file_bytes = archive.extractfile(tarinfo)
-            yield from self.extract(Path(tarinfo.name), file_bytes)
+            wrapped_bytes = FileChunkStreamWrapper(archive.extractfile(tarinfo), size_left)
+            yield from self.extract(Path(tarinfo.name), wrapped_bytes)
 
-    def read_zip_archive(self, raw_archive_stream):
+            size_left -= wrapped_bytes.total_size
+
+    def read_zip_archive(self, raw_archive_stream) -> Iterator[bytes]:
         """
-
+        Utility for unpacking a zip archive, asserting that the contents of that archive fall within our file-size
+        constraints
         """
+        num_files = 0
+        size_left = self._extraction_thresholds.size
 
-        total_size = 0
         for fname, fsize, chunks in stream_unzip(raw_archive_stream):
+            num_files += 1
+            if num_files > self._extraction_thresholds.entries:
+                raise AssertionError("Too many files present in this archive.")
+
             fname = fname.decode("utf-8")
+            # We can't just skip files where fsize is None, because at certain compression levels stream_unzip
+            #  just returns None for all file sizes. This doesn't mean that there is no data in the file, just
+            #  that the filesize is unknown.
             should_skip = fsize == 0 or self.should_skip_file(fname)
             if should_skip:
                 # We still need to exhaust the chunks for this part of the archive in order to
                 #  be able to consume the stream for the next part! If we don't do this, stream_unzip
                 #  will raise an UnfinishedIterationError, since we can't just skip ahead
-                for _ in chunks:
+                for c in chunks:
+                    size_left -= len(c)
+                    if size_left <= 0:
+                        raise AssertionError("This archive is too big")
                     continue
                 continue
 
-            # TODO - Size assertions?
-            if fsize is not None:
-                total_size += fsize
+            wrapped_bytes = ZipArchiveMemberStreamWrapper(chunks, size_left)
+            yield from self.extract(Path(fname), wrapped_bytes)
 
-            wrapped = ZipArchiveMemberWrapper(chunks)
-            yield from self.extract(Path(fname), wrapped)
-
-    @abc.abstractmethod
-    def read_file_stream(self, file: IOBase):
-        """
-        When we finally hit a file that no longer needs to be expanded/decompressed in some manner, this method
-        will be called to yield data from the file in some manner. This is here is order to allow concrete classes
-        to decide how they actually want to yield data from the file, whether that be raw chunks, as lines, or a blob
-        of the whole file (or something else entirely)
-        """
+            # We read this from the member wrapper itself instead of trusting the `fsize` that is given to us from
+            #  above because we do not control this archive, and as such, we need to treat those fsize numbers as
+            #  untrusted/user input
+            size_left -= wrapped_bytes.total_size
 
     def extract_directory(self, directory: Path) -> Iterator[bytes]:
         for path in directory.iterdir():
@@ -214,14 +230,14 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
 
         match filepath.suffixes:
             case [".tgz"] | [".tar", ".gz"]:
-                self.logger.info(f"Unpacking gzipped tarball: {filepath}")
+                logger.info(f"Unpacking gzipped tarball: {filepath}")
                 # Note - `r|gz` means that the filepath is processed as a stream of blocks, and as such
                 # does not allow seeking. See - https://docs.python.org/3.10/library/tarfile.html#tarfile.open
                 with tarfile.open(filepath, "r|gz", file_stream) as tgz:
                     yield from self.read_tgz_archive(tgz)
 
             case [".zip"]:
-                self.logger.info(f"Unpacking .zip archive: {filepath} from stream: {file_stream}")
+                logger.info(f"Unpacking .zip archive: {filepath} from stream: {file_stream}")
                 if file_stream:
                     yield from self.read_zip_archive(file_stream)
 
@@ -236,7 +252,8 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
                         yield from self.read_zip_archive(file_stream)
 
             case [*suffixes] if (len(suffixes) > 0 and suffixes[-1] == ".gz"):
-                self.logger.info(f"Processing gzipped file: {filepath}")
+                logger.info(f"Processing gzipped file: {filepath}")
+                to_open = file_stream if file_stream is not None else filepath
                 with gzip.open(to_open) as file:
                     # We may see files like {name}.zip.gz/.json.gz, so make sure we handle that appropriately
                     if len(suffixes) == 1:
@@ -247,7 +264,7 @@ class AbstractFileDataLoader(abc.ABC, DataLoader):
 
             # If the Path is not a directory and has no suffix, it will match []
             case [".json"] | [".log"] | []:
-                self.logger.info(f"Yielding raw file: {filepath}, from stream: {to_open}")
+                logger.info(f"Yielding raw file: {filepath}")
                 if file_stream:
                     yield from self.read_file_stream(file_stream)
                 else:

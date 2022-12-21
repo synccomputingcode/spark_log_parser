@@ -1,4 +1,6 @@
 import collections
+from typing import Iterator
+
 import numpy
 
 from .dag_model import DagModel
