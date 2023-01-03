@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 import spark_log_parser
+from spark_log_parser.loaders import ArchiveExtractionThresholds
 
 logging.basicConfig()
 logging.captureWarnings(True)
@@ -50,21 +51,8 @@ def main():
     else:
         result_path = args.result_dir.joinpath("parsed-" + args.log_file.name)
 
-    with tempfile.TemporaryDirectory() as work_dir:
-
-        event_log_paths = Extractor(
-            unquote(args.log_file.resolve().as_uri()),
-            work_dir,
-            thresholds=ExtractThresholds(size=20000000000),
-        ).extract()
-
-        event_log, parsed = EventLogBuilder(event_log_paths, work_dir).build()
-
-        if not parsed:
-            app = create_spark_application(spark_eventlog_path=str(event_log))
-            app.save(str(result_path))
-        else:
-            print("--Input log was already parsed")
-            shutil.copyfile(event_log, str(result_path) + ".json")
+    event_log_path = unquote(args.log_file.resolve().as_uri())
+    app = create_spark_application(path=str(event_log_path), thresholds=ArchiveExtractionThresholds(size=20000000000))
+    app.save(str(result_path))
 
     print(f"--Result saved to: {result_path}.json")

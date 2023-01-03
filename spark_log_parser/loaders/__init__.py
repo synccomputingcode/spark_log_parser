@@ -150,8 +150,8 @@ class AbstractFileDataLoader(DataLoader, abc.ABC):
 
     _extraction_thresholds: ArchiveExtractionThresholds
 
-    def __init__(self, extraction_thresholds: ArchiveExtractionThresholds = None):
-        super().__init__()
+    def __init__(self, extraction_thresholds: ArchiveExtractionThresholds = None, **kwargs):
+        super().__init__(**kwargs)
         self._extraction_thresholds = extraction_thresholds or ArchiveExtractionThresholds()
 
     @staticmethod

@@ -1,6 +1,6 @@
 import logging
 import orjson
-from typing import Generic, TypeVar
+from typing import TypeVar
 
 from aiodataloader import DataLoader
 
@@ -13,7 +13,7 @@ RawJSONBlobDataLoader = TypeVar("BlobDataLoader", LocalFileBlobDataLoader, S3Fil
 logger = logging.getLogger("JSONLoaders")
 
 
-class JSONBlobDataLoader(DataLoader, Generic[RawJSONBlobDataLoader]):
+class JSONBlobDataLoader(DataLoader):
     cache = False
     blob_data_loader: RawJSONBlobDataLoader
 
@@ -21,26 +21,27 @@ class JSONBlobDataLoader(DataLoader, Generic[RawJSONBlobDataLoader]):
         super().__init__(**kwargs)
         self.blob_data_loader = blob_data_loader
 
-    def yield_json(self, data):
+    @staticmethod
+    def _yield_json(data):
         _, blob = data
         return orjson.loads(next(blob))
 
     async def batch_load_fn(self, keys):
         raw_datas = await self.blob_data_loader.load_many(keys)
         # We expect each "blob" here to be well-formed JSON, so parse each of them thusly
-        return [self.yield_json(next(raw_data)) for raw_data in raw_datas]
+        return [self._yield_json(next(raw_data)) for raw_data in raw_datas]
 
 
 RawJSONLinesDataLoader = TypeVar("LinesDataLoader", LocalFileLinesDataLoader, S3FileLinesDataLoader,
                                  HTTPFileLinesDataLoader)
 
 
-class JSONLinesDataLoader(DataLoader, Generic[RawJSONLinesDataLoader]):
+class JSONLinesDataLoader(DataLoader):
     cache = False
     lines_data_loader: RawJSONLinesDataLoader
 
     @staticmethod
-    def yield_json_lines(data):
+    def _yield_json_lines(data):
         for filepath, file in data:
             logger.info(f"Processing: {filepath}")
 
@@ -80,4 +81,4 @@ class JSONLinesDataLoader(DataLoader, Generic[RawJSONLinesDataLoader]):
 
     async def batch_load_fn(self, keys):
         raw_datas = await self.lines_data_loader.load_many(keys)
-        return [self.yield_json_lines(data) for data in raw_datas]
+        return [self._yield_json_lines(data) for data in raw_datas]

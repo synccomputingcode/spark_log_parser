@@ -7,6 +7,7 @@ import os
 import time
 from collections import defaultdict
 from typing import Generic, TypeVar
+from urllib.parse import urlparse
 
 import boto3
 import numpy as np
@@ -17,9 +18,11 @@ from .application_model import ApplicationModel
 from .exceptions import SyncParserException
 from .validation_configs import ConfigValidationDatabricks, ConfigValidationEMR
 from .validation_event_data import EventDataValidation
-from ..loaders.json import JSONBlobDataLoader, JSONLinesDataLoader, RawJSONLinesDataLoader, RawJSONBlobDataLoader
-from ..loaders.local_file import LocalFileBlobDataLoader, LocalFileLinesDataLoader
-from ..loaders.s3 import S3FileBlobDataLoader, S3FileLinesDataLoader
+from ..loaders import ArchiveExtractionThresholds
+from ..loaders.https import HTTPFileLinesDataLoader
+from ..loaders.json import JSONBlobDataLoader, JSONLinesDataLoader
+from ..loaders.local_file import LocalFileLinesDataLoader
+from ..loaders.s3 import S3FileLinesDataLoader
 
 
 class SparkApplication:
@@ -193,18 +196,17 @@ class AbstractSparkApplicationDataLoader(abc.ABC, Generic[DataType], DataLoader)
         return [self.construct_spark_application(k) for k in raw_datas]
 
 
-class ParsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[dict], Generic[RawJSONBlobDataLoader]):
+class ParsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[dict]):
     """
     Creates a SparkApplication from a parsed JSON representation of that application. Useful for re-hydrating
     parsed logs that were saved somewhere (or submitted directly to us)
     """
 
-    _json_data_loader: JSONBlobDataLoader[RawJSONBlobDataLoader]
+    _json_data_loader: JSONBlobDataLoader
 
-    def __init__(self, json_loader: JSONBlobDataLoader[RawJSONBlobDataLoader], **kwargs):
+    def __init__(self, json_loader: JSONBlobDataLoader, **kwargs):
         super().__init__(**kwargs)
 
-        # assert json_loader
         self._json_data_loader = json_loader
 
     async def load_raw_datas(self, keys) -> list[dict]:
@@ -295,17 +297,15 @@ class ParsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[dict], 
         return spark_app
 
 
-class UnparsedLogSparkApplicationLoader(
-    AbstractSparkApplicationDataLoader[ApplicationModel], Generic[RawJSONLinesDataLoader]
-):
+class UnparsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[ApplicationModel]):
     """
     From a raw set of Spark log lines, constructs a SparkApplication
     """
-    _json_lines_loader: JSONLinesDataLoader[RawJSONLinesDataLoader] = None
+    _json_lines_loader: JSONLinesDataLoader = None
 
     def __init__(
         self,
-        json_lines_loader: JSONLinesDataLoader[RawJSONLinesDataLoader],
+        json_lines_loader: JSONLinesDataLoader,
         stdout_path: str = None,
         debug: bool = False,
         **kwargs,
@@ -906,9 +906,7 @@ class UnparsedLogSparkApplicationLoader(
         return spark_app
 
 
-class AmbiguousLogFormatSparkApplicationLoader(
-    AbstractSparkApplicationDataLoader[dict | ApplicationModel], Generic[RawJSONLinesDataLoader]
-):
+class AmbiguousLogFormatSparkApplicationLoader(AbstractSparkApplicationDataLoader[dict | ApplicationModel]):
     """
     Much of the time, we may not know whether a file given to us is for a parsed or unparsed eventlog without opening it
     up first. But, we don't want to have to open up a file and just throw it away if it's not what we initially
@@ -916,13 +914,13 @@ class AmbiguousLogFormatSparkApplicationLoader(
     the proper "sub-loader" transparently (and without having to re-load anything)
     """
 
-    _json_lines_loader: JSONLinesDataLoader[RawJSONLinesDataLoader]
+    _json_lines_loader: JSONLinesDataLoader
     _parsed_app_loader: ParsedLogSparkApplicationLoader
     _unparsed_app_loader: UnparsedLogSparkApplicationLoader
 
     def __init__(
         self,
-        json_lines_loader: JSONLinesDataLoader[RawJSONLinesDataLoader],
+        json_lines_loader: JSONLinesDataLoader,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -1007,55 +1005,32 @@ class AmbiguousLogFormatSparkApplicationLoader(
         pass
 
 
-"""
-TODO - this function maintains the filepath inputs in order to make migration easier. This should be
-removed at some point.
-"""
-
-
-async def create_spark_application_async(
-    spark_eventlog_parsed_path=None,
-    spark_eventlog_path=None,
-    stdout=None,
-    debug=False,
-) -> SparkApplication:
-    """ """
-
-    path = spark_eventlog_parsed_path or spark_eventlog_path
+def create_spark_application(*, path, thresholds=None) -> SparkApplication:
+    """
+    Convenience function for constructing SparkApplication objects
+    """
     if not path:
         raise ValueError("No provided eventlog location.")
 
-    is_parsed = spark_eventlog_parsed_path is not None
-    is_s3_path = (path is not None) and ("s3://" in path)
+    path = str(path)
+    parsed_path = urlparse(path)
 
-    loader: ParsedLogSparkApplicationLoader | UnparsedLogSparkApplicationLoader = None
-    match is_parsed, is_s3_path:
+    thresholds = thresholds if thresholds is not None else ArchiveExtractionThresholds()
 
-        case (True, True):
-            file_loader = JSONBlobDataLoader(blob_data_loader=S3FileBlobDataLoader())
-            loader = ParsedLogSparkApplicationLoader(json_loader=file_loader)
+    async def create_spark_app():
+        match parsed_path.scheme:
+            case "s3":
+                file_loader = S3FileLinesDataLoader(extraction_thresholds=thresholds)
 
-        case (True, False):
-            file_loader = JSONBlobDataLoader(blob_data_loader=LocalFileBlobDataLoader())
-            loader = ParsedLogSparkApplicationLoader(json_loader=file_loader)
+            case "http" | "https":
+                file_loader = HTTPFileLinesDataLoader(extraction_thresholds=thresholds)
 
-        case (False, True):
-            file_loader = JSONLinesDataLoader(lines_data_loader=S3FileLinesDataLoader())
-            loader = UnparsedLogSparkApplicationLoader(
-                json_lines_loader=file_loader, stdout_path=stdout, debug=debug
-            )
+            case "file" | _:
+                file_loader = LocalFileLinesDataLoader(extraction_thresholds=thresholds)
 
-        case (False, False):
-            file_loader = JSONLinesDataLoader(lines_data_loader=LocalFileLinesDataLoader())
-            loader = UnparsedLogSparkApplicationLoader(
-                json_lines_loader=file_loader, stdout_path=stdout, debug=debug
-            )
+        json_loader = JSONLinesDataLoader(lines_data_loader=file_loader)
+        app_loader = AmbiguousLogFormatSparkApplicationLoader(json_lines_loader=json_loader)
 
-    return await loader.load(path)
+        return await app_loader.load(path)
 
-
-def create_spark_application(**kwargs) -> SparkApplication:
-    """
-    Thin wrapper around create_spark_application_async to construct instances in a blocking manner
-    """
-    return asyncio.run(create_spark_application_async(**kwargs))
+    return asyncio.run(create_spark_app())
