@@ -1,9 +1,10 @@
 import logging
 import orjson
-from typing import TypeVar
+from typing import TypeVar, Iterator
 
 from aiodataloader import DataLoader
 
+from spark_log_parser.loaders import FileExtractionResult
 from spark_log_parser.loaders.https import HTTPFileLinesDataLoader, HTTPFileBlobDataLoader
 from spark_log_parser.loaders.local_file import LocalFileBlobDataLoader, LocalFileLinesDataLoader
 from spark_log_parser.loaders.s3 import S3FileBlobDataLoader, S3FileLinesDataLoader
@@ -40,16 +41,25 @@ class JSONLinesDataLoader(DataLoader):
     cache = False
     lines_data_loader: RawJSONLinesDataLoader
 
+    def __init__(self, lines_data_loader: RawJSONLinesDataLoader, **kwargs):
+        super().__init__(**kwargs)
+        self.lines_data_loader = lines_data_loader
+
     @staticmethod
-    def _yield_json_lines(data):
-        for filepath, file in data:
+    def _yield_json_lines(data: Iterator[FileExtractionResult]) -> Iterator[dict]:
+        for filepath, file_stream in data:
             logger.info(f"Processing: {filepath}")
 
-            lines = iter(file)
+            lines = iter(file_stream)
             first_line = next(lines)
             try:
                 json_line = orjson.loads(first_line)
                 yield json_line
+
+                # If we were able to successfully parse the first line as a JSON object, then we should be able
+                #  to assume the rest of the lines in the file are well-formed JSON objects
+                for line in lines:
+                    yield orjson.loads(line)
             except orjson.JSONDecodeError:
                 # If the first line is not parseable as a JSON object, try to parse the whole file as a JSON Object
                 #  as well, and yield that as a line instead.
@@ -69,15 +79,6 @@ class JSONLinesDataLoader(DataLoader):
                     yield orjson.loads(first_line)
                 except orjson.JSONDecodeError:
                     logger.warning(f"Could not parse file {filepath} as JSON - skipping")
-                finally:
-                    continue
-
-            for line in lines:
-                yield orjson.loads(line)
-
-    def __init__(self, lines_data_loader: RawJSONLinesDataLoader, **kwargs):
-        super().__init__(**kwargs)
-        self.lines_data_loader = lines_data_loader
 
     async def batch_load_fn(self, keys):
         raw_datas = await self.lines_data_loader.load_many(keys)

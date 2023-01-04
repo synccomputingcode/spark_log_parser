@@ -301,7 +301,7 @@ class UnparsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[Appli
     """
     From a raw set of Spark log lines, constructs a SparkApplication
     """
-    _json_lines_loader: JSONLinesDataLoader = None
+    _json_lines_loader: JSONLinesDataLoader
 
     def __init__(
         self,
@@ -981,27 +981,35 @@ class AmbiguousLogFormatSparkApplicationLoader(AbstractSparkApplicationDataLoade
     #  un/parsed SparkApplication loader based on the underlying data, and those loaders have these methods
     #  implemented already
     def compute_sql_info(self, raw_data: DataType, spark_app: SparkApplication) -> SparkApplication:
+        """See comment above for why this is left un-implemented"""
         pass
 
     def compute_executor_info(self, raw_data: DataType, spark_app: SparkApplication) -> SparkApplication:
+        """See comment above for why this is left un-implemented"""
         pass
 
     def compute_all_job_data(self, raw_data: DataType, spark_app: SparkApplication) -> SparkApplication:
+        """See comment above for why this is left un-implemented"""
         pass
 
     def compute_all_task_data(self, raw_data: DataType, spark_app: SparkApplication) -> SparkApplication:
+        """See comment above for why this is left un-implemented"""
         pass
 
     def compute_all_stage_data(self, raw_data: DataType, spark_app: SparkApplication) -> SparkApplication:
+        """See comment above for why this is left un-implemented"""
         pass
 
     def compute_all_driver_accum_data(self, raw_data: DataType, spark_app: SparkApplication) -> SparkApplication:
+        """See comment above for why this is left un-implemented"""
         pass
 
     def compute_all_metadata(self, raw_data: DataType, spark_app: SparkApplication) -> SparkApplication:
+        """See comment above for why this is left un-implemented"""
         pass
 
     def compute_recent_events(self, raw_data: DataType, spark_app: SparkApplication) -> SparkApplication:
+        """See comment above for why this is left un-implemented"""
         pass
 
 

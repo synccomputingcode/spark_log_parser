@@ -35,7 +35,6 @@ async def test_loading_succeeds_as_expected(archive_paths):
         for _, data in file_iter:
             for _ in data:
                 continue
-            continue
 
 
 @pytest.mark.asyncio
@@ -47,7 +46,6 @@ async def test_archive_size_limit_error(archive_paths):
             for _, data in await file_loader.load(str(path)):
                 for _ in data:
                     continue
-                continue
             assert False, f"Expected an ArchiveTooLargeError error to be raised while loading filepath: {path}"
         except ArchiveTooLargeError as e:
             assert e
