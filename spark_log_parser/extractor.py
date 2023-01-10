@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import ParseResult, urlparse
 
 import requests
+import boto3
 from pydantic import BaseModel
 
 
@@ -62,7 +63,7 @@ class Extractor:
 
     def _validate_s3_client(self, s3_client):
         if self.source_url.scheme == "s3" and s3_client is None:
-            raise ValueError("An S3 client is needed for S3 URLs")
+            return boto3.client("s3")
 
         return s3_client
 
@@ -100,6 +101,7 @@ class Extractor:
             )
         if extension.endswith(".gz"):
             return self._extract_gz(event_log, extract_dir.joinpath(event_log.name[: -len(".gz")]))
+
         if extension in {".json", ".log", ""}:
             return [event_log]
 
@@ -244,8 +246,17 @@ class Extractor:
                 for chunk in response.iter_content(chunk_size=self.http_chunk_size):
                     fobj.write(chunk)
         elif self.source_url.scheme == "s3":
-            source_key = self.source_url.path.lstrip("/")
+            """
+            s3 protocol formats look like -
+                s3://some/path/to/file/file.ext
+            
+            When parsed with urllib.parse, the first part of the path will be parsed as the `netloc` (which is
+            'some' from our above example). The rest of the path will show up under `path`. So when we call 
+            s3_client.list_objects_v2(Bucket=netloc, Prefix=path), we are basically filtering sub-paths within
+            that top-level bucket that match that path! TBD is there is a more efficient way to do this. 
+            """
             source_bucket = self.source_url.netloc
+            source_key = self.source_url.path.lstrip("/")
 
             s3_content_count = 0
             s3_content_size = 0
