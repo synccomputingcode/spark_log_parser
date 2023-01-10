@@ -19,7 +19,7 @@ class TaskModel:
             - self.result_serialization_time
             - self.start_time
         )
-        # Should be set to true if this task is a straggler, and we know the cause of the
+        # Should be set to true if this task is a straggler and we know the cause of the
         # straggler behavior.
         self.straggler_behavior_explained = False
 
@@ -27,6 +27,7 @@ class TaskModel:
         self.logger = logging.getLogger("Task")
 
         task_info = json_data["Task Info"]
+
         task_metrics = json_data["Task Metrics"]
         task_executor_metrics = json_data.get("Task Executor Metrics")
 
@@ -108,7 +109,6 @@ class TaskModel:
         )  # TODO: fill in once output time has been added.
         if output_metrics := task_metrics.get("Output Metrics"):
             self.output_mb = int(output_metrics["Bytes Written"]) / 1048576.0
-
 
         # False if the task was a map task that did not run locally with its input data.
         self.data_local = True
