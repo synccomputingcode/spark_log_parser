@@ -105,7 +105,7 @@ class SparkApplication:
 DataType = TypeVar("DataType")
 
 
-class AbstractSparkApplicationDataLoader(abc.ABC, Generic[DataType], DataLoader):
+class AbstractSparkApplicationDataLoader(DataLoader, Generic[DataType], abc.ABC):
     """
     Defines the methods that other data loaders should implement in order to appropriately construct
     some SparkApplication. The order in which these methods are called is defined in construct_spark_application
