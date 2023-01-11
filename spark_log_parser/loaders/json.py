@@ -23,14 +23,14 @@ class JSONBlobDataLoader(DataLoader):
         self.blob_data_loader = blob_data_loader
 
     @staticmethod
-    def _yield_json(data):
+    def _parse_as_json(data: FileExtractionResult):
         _, blob = data
         return orjson.loads(next(blob))
 
     async def batch_load_fn(self, keys):
         raw_datas = await self.blob_data_loader.load_many(keys)
         # We expect each "blob" here to be well-formed JSON, so parse each of them thusly
-        return [self._yield_json(next(raw_data)) for raw_data in raw_datas]
+        return [self._parse_as_json(next(raw_data)) for raw_data in raw_datas]
 
 
 RawJSONLinesDataLoader = TypeVar("LinesDataLoader", LocalFileLinesDataLoader, S3FileLinesDataLoader,
