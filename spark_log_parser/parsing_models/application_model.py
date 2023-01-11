@@ -4,7 +4,7 @@ from typing import Iterator
 import numpy
 
 from .dag_model import DagModel
-from .exceptions import UrgentEventValidationException, LogSubmissionException
+from .exceptions import UrgentEventValidationException, LogSubmissionException, LazyEventValidationException
 from .executor_model import ExecutorModel
 from .job_model import JobModel
 from .stage_model import StageModel
@@ -241,15 +241,18 @@ class ApplicationModel:
             expected_rollover_log_numbers_seen = set(range(max_rollover + 1))
             if expected_rollover_log_numbers_seen.difference(rollover_log_numbers_seen):
                 raise LogSubmissionException(
-                    error_message=("Rollover logs were detected, but there were fewer than expected.\n" +
-                                   f"Expected to receive rollover numbers: {', '.join(expected_rollover_log_numbers_seen)}, " +
-                                   f"but instead received: {', '.join(sorted(rollover_log_numbers_seen))} ")
+                    error_message=("Rollover logs were detected, but there were fewer than expected.\n"
+                                   + f"Expected to receive rollover numbers: {', '.join(expected_rollover_log_numbers_seen)}, "
+                                   + f"but instead received: {', '.join(sorted(rollover_log_numbers_seen))} ")
                 )
 
         for task in self.tasks:
             stage_id = task.stage_id
             stage = self.stages[stage_id]
             stage.add_task(task)
+
+        if len(self.stages) == 0:
+            raise LazyEventValidationException("No stages detected in Spark Eventlog")
 
         for stage_id, stage in self.stages.items():
             if stage.submission_time is None:
