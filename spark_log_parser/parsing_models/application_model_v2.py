@@ -128,10 +128,11 @@ class AbstractSparkApplicationDataLoader(abc.ABC,
     """
 
     @abc.abstractmethod
-    async def load_raw_datas(self, keys: list[SparkApplicationLoaderKey]) -> list[SparkApplicationRawDataType]:
+    async def load_raw_datas(self, keys: list[SparkApplicationLoaderKey]) -> list[SparkApplicationRawDataType | Exception]:
         """
         Implementors of this method should return the data that will be the "source-of-truth", i.e. that data from
-        which this concrete class will be constructing the SparkApplication.
+        which this concrete class will be constructing the SparkApplication. If the underlying data is not able to
+        be loaded for some reason, implementors should return an Exception for DataLoader to raise to the caller.
         """
 
     @abc.abstractmethod
@@ -243,7 +244,9 @@ class AbstractSparkApplicationDataLoader(abc.ABC,
 
     async def batch_load_fn(self, keys: list[SparkApplicationLoaderKey]):
         raw_datas = await self.load_raw_datas(keys)
-        return [self.construct_spark_application(*kv) for kv in zip(keys, raw_datas)]
+        # Make sure we bubble up any Exceptions from load_raw_datas appropriately
+        return [self.construct_spark_application(key, data) if not isinstance(data, Exception) else data
+                for (key, data) in zip(keys, raw_datas)]
 
 
 class ParsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[str, dict]):
@@ -989,7 +992,7 @@ class AbstractAmbiguousLogFormatSparkApplicationLoader(
     def _construct_from_unparsed_representation(self, key: str, data: tuple[bool, ApplicationModel]):
         return self._unparsed_app_loader.construct_spark_application(key, data)
 
-    async def _load_raw_datas(self, keys: list[str]) -> list[tuple[bool, dict | ApplicationModel]]:
+    async def _load_raw_datas(self, keys: list[str]) -> list[tuple[bool, dict | ApplicationModel | Exception]]:
         """
         Given some eventlog locations, determines the data format of the file (i.e. raw vs already-parsed) and returns
         the appropriate in-memory representation of that file.
@@ -1016,22 +1019,23 @@ class AbstractAmbiguousLogFormatSparkApplicationLoader(
                     ret.append((False, app_model))
                 except Exception as e:
                     logger.error(f"Encountered an exception loading eventlog located at: {key}", exc_info=e)
-                    ret.append((False, None))
+                    ret.append((False, e))
 
         return ret
 
-    def _construct_base_spark_application(self, key: str,
-                                          raw_data: tuple[bool, dict | ApplicationModel]) -> SparkApplication:
+    def _construct_base_spark_application(
+        self, key: str, raw_data: tuple[bool, dict | ApplicationModel | Exception]
+    ) -> SparkApplication | Exception:
         """
         Given an initial piece of raw_data, calls into the appropriate "sub-loader" based on the detected file format,
         i.e. whether the eventlog was delivered to us already-parsed.
         """
         is_parsed, data = raw_data
 
-        # If we weren't able to create a SparkApplication out of one of the "keys" provided to us, we still need to
-        #  return something in order to adhere to the DataLoader batch API
-        if data is None:
-            spark_app = None
+        # If we weren't able to create a SparkApplication out of one of the "keys" provided to us, we want to bubble
+        #  that exception upwards so that DataLoader will raise it to the caller when the load() is await-ed
+        if isinstance(data, Exception):
+            spark_app = data
         elif is_parsed:
             spark_app = self._construct_from_parsed_representation(key, data)
         else:
@@ -1094,64 +1098,10 @@ class AmbiguousLogFormatSparkApplicationLoader(AbstractAmbiguousLogFormatSparkAp
     the proper "sub-loader" transparently (and without having to re-load anything)
     """
 
-    def _construct_from_parsed_representation(self, key: str, data: tuple[bool, dict]):
-        return self._parsed_app_loader.construct_spark_application(key, data)
-
-    def _construct_from_unparsed_representation(self, key: str, data: tuple[bool, ApplicationModel]):
-        return self._unparsed_app_loader.construct_spark_application(key, data)
-
-    async def _load_raw_datas(self, keys: list[str]) -> list[tuple[bool, dict | ApplicationModel]]:
-        """
-
-        """
-        raw_datas = await self._json_lines_loader.load_many(keys)
-
-        ret = []
-        for raw_data in raw_datas:
-            line = next(raw_data)
-            # This assumes that for parsed apps, the first "line" from the file will be the fully-formed dictionary
-            #  representation of a SparkApplication. This may not be true over time...
-            if SparkApplication.is_parsed_spark_app(line):
-                ret.append((True, line))
-            else:
-                # ApplicationModel expects to receive all the lines, so just wrap the line we already read in a
-                #  generator so that we can re-yield it appropriately
-                def lines():
-                    yield line
-                    yield from raw_data
-
-                app_model = ApplicationModel(log_lines=lines())
-                try:
-                    UnparsedLogSparkApplicationLoader.validate_app_model(app_model)
-                    ret.append((False, app_model))
-                except SyncParserException as e:
-                    logger.warning(e)
-                    ret.append((False, None))
-
-        return ret
-
-    def _construct_base_spark_application(self, key: str,
-                                          raw_data: tuple[bool, dict | ApplicationModel]) -> SparkApplication:
-        """
-
-        """
-        is_parsed, data = raw_data
-
-        # If we weren't able to create a SparkApplication out of one of the "keys" provided to us, we still need to
-        #  return something in order to adhere to the DataLoader batch API
-        if data is None:
-            spark_app = None
-        elif is_parsed:
-            spark_app = self._construct_from_parsed_representation(key, data)
-        else:
-            spark_app = self._construct_from_unparsed_representation(key, data)
-
-        return spark_app
-
-    async def load_raw_datas(self, keys: list[str]) -> list[tuple[bool, dict | ApplicationModel]]:
+    async def load_raw_datas(self, keys: list[str]) -> list[tuple[bool, dict | ApplicationModel | Exception]]:
         return await self._load_raw_datas(keys)
 
-    def construct_spark_application(self, key: str, raw_data: tuple[bool, dict | ApplicationModel]) -> SparkApplication:
+    def construct_spark_application(self, key: str, raw_data: tuple[bool, dict | ApplicationModel | Exception]) -> SparkApplication:
         return self._construct_base_spark_application(key, raw_data)
 
 
