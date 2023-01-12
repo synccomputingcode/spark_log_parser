@@ -12,7 +12,9 @@ class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
     Abstract class that supports loading files directly from S3
     """
 
-    _s3 = None
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._s3 = None
 
     @property
     def s3(self):

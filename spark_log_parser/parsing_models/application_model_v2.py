@@ -27,23 +27,22 @@ logger = logging.getLogger("SparkApplication")
 
 
 class SparkApplication:
-    # TODO - are these booleans actually necessary? Would `spark_app.sqlData is not None` suffice?
-    existsSQL: bool = False
-    sqlData: pd.DataFrame = None
-
-    existsExecutors: bool = False
-    executorData: pd.DataFrame = None
-
-    metadata: dict = {}
-
-    # TODO - these DataFrames should be better documented
-    jobData: pd.DataFrame = None
-    stageDate: pd.DataFrame = None
-    taskData: pd.DataFrame = None
-    accumData: pd.DataFrame = None
 
     def __init__(self):
-        return
+        # TODO - are these booleans actually necessary? Would `spark_app.sqlData is not None` suffice?
+        self.existsSQL: bool = False
+        self.sqlData: pd.DataFrame = None
+
+        self.existsExecutors: bool = False
+        self.executorData: pd.DataFrame = None
+
+        self.metadata: dict = {}
+
+        # TODO - these DataFrames should be better documented
+        self.jobData: pd.DataFrame = None
+        self.stageDate: pd.DataFrame = None
+        self.taskData: pd.DataFrame = None
+        self.accumData: pd.DataFrame = None
 
     def to_dict(self):
         """
@@ -255,12 +254,10 @@ class ParsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[str, di
     parsed logs that were saved somewhere (or submitted directly to us)
     """
 
-    _json_data_loader: JSONBlobDataLoader
-
     def __init__(self, json_loader: JSONBlobDataLoader, **kwargs):
         super().__init__(**kwargs)
 
-        self._json_data_loader = json_loader
+        self._json_data_loader: JSONBlobDataLoader = json_loader
 
     async def load_raw_datas(self, keys) -> list[dict]:
         """
@@ -357,7 +354,6 @@ class UnparsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[str, 
     """
     From a raw set of Spark log lines, constructs a SparkApplication
     """
-    _json_lines_loader: JSONLinesDataLoader
 
     def __init__(
         self,
@@ -371,7 +367,7 @@ class UnparsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[str, 
         self.stdout_path = stdout_path
         self.debug = debug
 
-        self._json_lines_loader = json_lines_loader
+        self._json_lines_loader: JSONLinesDataLoader = json_lines_loader
 
     @staticmethod
     def validate_app_model(app_model: ApplicationModel):
@@ -968,10 +964,6 @@ class UnparsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[str, 
 class AbstractAmbiguousLogFormatSparkApplicationLoader(
         AbstractSparkApplicationDataLoader[SparkApplicationLoaderKey, tuple[bool, dict | ApplicationModel]], abc.ABC):
 
-    _parsed_app_loader: ParsedLogSparkApplicationLoader
-    _unparsed_app_loader: UnparsedLogSparkApplicationLoader
-    _json_lines_loader: JSONLinesDataLoader
-
     def __init__(
         self,
         json_lines_loader: JSONLinesDataLoader,
@@ -979,12 +971,12 @@ class AbstractAmbiguousLogFormatSparkApplicationLoader(
     ):
         super().__init__(**kwargs)
 
-        self._json_lines_loader = json_lines_loader
+        self._json_lines_loader: JSONLinesDataLoader = json_lines_loader
         # These "sub-loaders" won't actually be loading the raw data, so we don't need to pass them any dataloaders
         #  We just want to use them to construct our SparkApplications based on whether the data handed to us is a
         #  parsed or unparsed eventlog
-        self._parsed_app_loader = ParsedLogSparkApplicationLoader(None)
-        self._unparsed_app_loader = UnparsedLogSparkApplicationLoader(None)
+        self._parsed_app_loader: ParsedLogSparkApplicationLoader = ParsedLogSparkApplicationLoader(None)
+        self._unparsed_app_loader: UnparsedLogSparkApplicationLoader = UnparsedLogSparkApplicationLoader(None)
 
     def _construct_from_parsed_representation(self, key: str, data: tuple[bool, dict]):
         return self._parsed_app_loader.construct_spark_application(key, data)

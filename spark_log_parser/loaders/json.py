@@ -16,11 +16,10 @@ logger = logging.getLogger("JSONLoaders")
 
 class JSONBlobDataLoader(DataLoader):
     cache = False
-    blob_data_loader: RawJSONBlobDataLoader
 
     def __init__(self, blob_data_loader: RawJSONBlobDataLoader, **kwargs):
         super().__init__(**kwargs)
-        self.blob_data_loader = blob_data_loader
+        self.blob_data_loader: RawJSONBlobDataLoader = blob_data_loader
 
     @staticmethod
     def _parse_as_json(data: FileExtractionResult):
@@ -39,11 +38,10 @@ RawJSONLinesDataLoader = TypeVar("LinesDataLoader", LocalFileLinesDataLoader, S3
 
 class JSONLinesDataLoader(DataLoader):
     cache = False
-    lines_data_loader: RawJSONLinesDataLoader
 
     def __init__(self, lines_data_loader: RawJSONLinesDataLoader, **kwargs):
         super().__init__(**kwargs)
-        self.lines_data_loader = lines_data_loader
+        self.lines_data_loader: RawJSONLinesDataLoader = lines_data_loader
 
     @staticmethod
     def _yield_json_lines(data: Iterator[FileExtractionResult]) -> Iterator[dict]:
