@@ -58,7 +58,6 @@ def assert_file_parsed_properly(eventlog_url, eventlog_file, eventlog_s3_dir, cr
     assert metadata['application_info']['spark_version'] is not None
 
 
-
 @pytest.mark.parametrize(
     "event_log_url",
     [
@@ -71,7 +70,9 @@ def assert_file_parsed_properly(eventlog_url, eventlog_file, eventlog_s3_dir, cr
     [(Path(ROOT_DIR, "logs", "emr.zip"), "airlinedelay/jb-42K1E16/")],
 )
 def test_emr_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir, mocker):
-    create_app = lambda: create_spark_application(spark_eventlog_path=str(event_log_url))
+    def create_app():
+        return create_spark_application(path=str(event_log_url))
+
     assert_file_parsed_properly(event_log_url, event_log_file_archive, event_log_s3_dir, create_app, mocker)
 
 
@@ -87,7 +88,9 @@ def test_emr_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir
     [(Path(ROOT_DIR, "logs", "similarity_parsed.json.gz"), "/foo/bar-baz/")],
 )
 def test_parsed_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir, mocker):
-    create_app = lambda: create_spark_application(spark_eventlog_parsed_path=str(event_log_url))
+    def create_app():
+        return create_spark_application(path=str(event_log_url))
+
     assert_file_parsed_properly(event_log_url, event_log_file_archive, event_log_s3_dir, create_app, mocker)
 
 
@@ -103,7 +106,9 @@ def test_parsed_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_
     [(Path(ROOT_DIR, "logs", "databricks.json"), "/foo/bar-baz/")],
 )
 def test_raw_log_from_s3(event_log_url, event_log_file_archive, event_log_s3_dir, mocker):
-    create_app = lambda: create_spark_application(spark_eventlog_path=str(event_log_url))
+    def create_app():
+        return create_spark_application(path=str(event_log_url))
+
     assert_file_parsed_properly(event_log_url, event_log_file_archive, event_log_s3_dir, create_app, mocker)
 
 
@@ -155,7 +160,7 @@ def test_databricks_log_from_s3_dir(event_log_url, event_log_file_archive, event
 
     with stubber:
         mocker.patch(BOTO_CLIENT_STUB_TARGET, new=lambda _: s3)
-        spark_app = create_spark_application(spark_eventlog_path=str(event_log_url))
+        spark_app = create_spark_application(path=str(event_log_url))
 
     stubber.assert_no_pending_responses()
 

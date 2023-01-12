@@ -7,8 +7,7 @@ import pytest
 from spark_log_parser.loaders.https import HTTPFileLinesDataLoader, HTTPFileBlobDataLoader
 from spark_log_parser.loaders.json import JSONLinesDataLoader, JSONBlobDataLoader
 from spark_log_parser.parsing_models.application_model_v2 import \
-    UnparsedLogSparkApplicationLoader, SparkApplication, \
-    ParsedLogSparkApplicationLoader
+    SparkApplication, ParsedLogSparkApplicationLoader, AmbiguousLogFormatSparkApplicationLoader
 from tests import assert_all_files_equivalent, PARSED_KEYS, ROOT_DIR
 
 
@@ -26,7 +25,7 @@ def get_spark_app(eventlog_local_path) -> SparkApplication:
             async def create_spark_app():
                 lines_loader = HTTPFileLinesDataLoader()
                 json_loader = JSONLinesDataLoader(lines_data_loader=lines_loader)
-                app_loader = UnparsedLogSparkApplicationLoader(json_lines_loader=json_loader)
+                app_loader = AmbiguousLogFormatSparkApplicationLoader(json_lines_loader=json_loader)
                 return await app_loader.load(http_url)
 
             spark_app = asyncio.run(create_spark_app())
@@ -105,4 +104,14 @@ def test_parsed_log():
             spark_app = asyncio.run(create_spark_app())
             parsed_app = spark_app.to_dict()
 
+    assert all(key in parsed_app for key in PARSED_KEYS), "Not all keys are present in re-hydrated Spark application"
+
+
+def test_ambiguous_log_format_parsed_log():
+    """
+    In real-world scenarios, we may not know if an eventlog is parsed or unparsed without trying to process the file
+    first. This test exercises that disambiguation logic when given a parsed eventlog
+    """
+    eventlog_local_path = Path("tests", "logs", "similarity_parsed.json.gz").resolve()
+    parsed_app = get_parsed_log(eventlog_local_path)
     assert all(key in parsed_app for key in PARSED_KEYS), "Not all keys are present in re-hydrated Spark application"

@@ -8,7 +8,7 @@ from tests import assert_all_files_equivalent, PARSED_KEYS, APP_NAME_INCORRECT_M
 
 
 def get_spark_app_from_raw_log(event_log_path):
-    return create_spark_application(spark_eventlog_path=str(event_log_path))
+    return create_spark_application(path=str(event_log_path))
 
 
 def get_parsed_log(event_log_path):
@@ -76,5 +76,5 @@ def test_parsed_log():
     Test that re-hydrating a parsed spark application contains all the keys we would expect it to
     """
     event_log_path = Path(ROOT_DIR, "logs", "similarity_parsed.json.gz").resolve()
-    rehydrated = create_spark_application(spark_eventlog_parsed_path=str(event_log_path)).to_dict()
+    rehydrated = create_spark_application(path=str(event_log_path)).to_dict()
     assert all(key in rehydrated for key in PARSED_KEYS), "Not all keys are present in re-hydrated Spark application"
