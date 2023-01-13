@@ -4,6 +4,8 @@ import boto3
 from pathlib import Path
 from urllib.parse import ParseResult, urlparse
 
+from botocore.client import BaseClient
+
 from spark_log_parser.loaders import AbstractFileDataLoader, BlobFileReaderMixin, LinesFileReaderMixin
 
 
@@ -14,7 +16,7 @@ class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._s3 = None
+        self._s3: BaseClient | None = None
 
     @property
     def s3(self):
