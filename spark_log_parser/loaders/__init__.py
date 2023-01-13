@@ -46,16 +46,12 @@ class FileChunkStreamWrapper:
     Note #2 - once `chunks` is consumed, calls to read/lines will return empty byte buffers
     """
 
-    total_size: int = 0
-
-    _maximum_allowed_size: ArchiveExtractionThresholds
-    _trailing_data: bytes = b''
-    _chunks: Iterator[bytes]
-
     def __init__(self, chunks: Iterator[bytes], maximum_file_size: int = None):
         assert chunks
-        self._chunks = chunks
-        self._maximum_allowed_size = maximum_file_size
+        self.total_size: int = 0
+        self._chunks: Iterator[bytes] = chunks
+        self._maximum_allowed_size: int = maximum_file_size
+        self._trailing_data: bytes = b''
 
     def __iter__(self):
         for chunk in self._chunks:
@@ -148,11 +144,9 @@ class AbstractFileDataLoader(DataLoader, abc.ABC):
 
     cache = False
 
-    _extraction_thresholds: ArchiveExtractionThresholds
-
     def __init__(self, extraction_thresholds: ArchiveExtractionThresholds = None, **kwargs):
         super().__init__(**kwargs)
-        self._extraction_thresholds = extraction_thresholds or ArchiveExtractionThresholds()
+        self._extraction_thresholds: ArchiveExtractionThresholds = extraction_thresholds or ArchiveExtractionThresholds()
 
     @staticmethod
     def should_skip_file(filename: str) -> bool:
