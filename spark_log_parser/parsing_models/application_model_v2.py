@@ -1,7 +1,7 @@
 import abc
 import asyncio
 import gzip
-import json
+import orjson
 import logging
 import os
 import time
@@ -40,7 +40,7 @@ class SparkApplication:
 
         # TODO - these DataFrames should be better documented
         self.jobData: pd.DataFrame = None
-        self.stageDate: pd.DataFrame = None
+        self.stageData: pd.DataFrame = None
         self.taskData: pd.DataFrame = None
         self.accumData: pd.DataFrame = None
 
@@ -90,11 +90,11 @@ class SparkApplication:
             filepath = inputFile + "-sync"
 
         if compress is False:
-            with open(filepath + ".json", "w") as fout:
-                fout.write(json.dumps(saveDat))
+            with open(filepath + ".json", "wb") as fout:
+                fout.write(orjson.dumps(saveDat))
         elif compress is True:
-            with gzip.open(filepath + ".json.gz", "w") as fout:
-                fout.write(json.dumps(saveDat).encode("ascii"))
+            with gzip.open(filepath + ".json.gz", "wb") as fout:
+                fout.write(orjson.dumps(saveDat))
         logger.info("Saved object locally to: %s" % (filepath))
 
     def save_to_s3(self, saveDat, filepath, compress):
@@ -106,15 +106,15 @@ class SparkApplication:
         key = ("/".join(path[1:])).lstrip("/") + ".json"
 
         if compress is False:
-            s3.put_object(Bucket=bucket, Body=json.dumps(saveDat).encode("utf-8"), Key=key)
+            s3.put_object(Bucket=bucket, Body=orjson.dumps(saveDat), Key=key)
         else:
-            dat = gzip.compress(json.dumps(saveDat).encode("utf-8"))
+            dat = gzip.compress(orjson.dumps(saveDat))
             s3.put_object(Bucket=bucket, Body=dat, Key=key + ".gz")
 
         logger.info("Saved object to cloud: %s" % (key))
 
 
-SparkApplicationRawDataType = TypeVar("DataType")
+SparkApplicationRawDataType = TypeVar("SparkApplicationRawDataType")
 SparkApplicationLoaderKey = TypeVar("SparkApplicationLoaderKey")
 
 

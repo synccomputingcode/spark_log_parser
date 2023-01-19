@@ -1,5 +1,6 @@
 import logging
 import orjson
+import ujson
 from typing import TypeVar, Iterator
 
 from aiodataloader import DataLoader
@@ -76,7 +77,16 @@ class JSONLinesDataLoader(DataLoader):
                 try:
                     yield orjson.loads(first_line)
                 except orjson.JSONDecodeError:
-                    logger.warning(f"Could not parse file {filepath} as JSON - skipping")
+                    # ujson is a little bit more lenient than orjson. In the interest of backwards compatibility, since
+                    #  we used to write out parsed logs that could contain invalid JSON values like NaN (which orjson
+                    #  does not support), we can try parsing this with data with a more lenient parser.
+                    try:
+                        yield ujson.loads(first_line)
+                        # Log a warning when this happens so that we can hopefully have some indication of when it's OK
+                        #  to remove this logic
+                        logger.warning(f"Was able to parse file {filepath} with ujson but not orjson")
+                    except ujson.JSONDecodeError:
+                        logger.warning(f"Could not parse file {filepath} as JSON - skipping")
 
     async def batch_load_fn(self, keys):
         raw_datas = await self.lines_data_loader.load_many(keys)
