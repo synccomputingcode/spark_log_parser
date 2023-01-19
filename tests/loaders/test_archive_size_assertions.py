@@ -32,8 +32,9 @@ async def test_loading_succeeds_as_expected(archive_paths):
 
         # Need to actually consume the iterator in order to test this behaviour; otherwise, the file is not
         #  actually ever read in from disk
-        for _ in file_iter:
-            continue
+        for _, data in file_iter:
+            for _ in data:
+                continue
 
 
 @pytest.mark.asyncio
@@ -42,8 +43,9 @@ async def test_archive_size_limit_error(archive_paths):
     file_loader = LocalFileBlobDataLoader(extraction_thresholds=archive_thresholds)
     for path in archive_paths:
         try:
-            for _ in await file_loader.load(str(path)):
-                continue
+            for _, data in await file_loader.load(str(path)):
+                for _ in data:
+                    continue
             assert False, f"Expected an ArchiveTooLargeError error to be raised while loading filepath: {path}"
         except ArchiveTooLargeError as e:
             assert e

@@ -5,7 +5,7 @@ import logging
 
 from io import BufferedIOBase
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, TypeVar
 from urllib.parse import ParseResult
 
 from pydantic import BaseModel
@@ -46,16 +46,12 @@ class FileChunkStreamWrapper:
     Note #2 - once `chunks` is consumed, calls to read/lines will return empty byte buffers
     """
 
-    total_size: int = 0
-
-    _maximum_allowed_size: ArchiveExtractionThresholds
-    _trailing_data: bytes = b''
-    _chunks: Iterator[bytes]
-
     def __init__(self, chunks: Iterator[bytes], maximum_file_size: int = None):
         assert chunks
-        self._chunks = chunks
-        self._maximum_allowed_size = maximum_file_size
+        self.total_size: int = 0
+        self._chunks: Iterator[bytes] = chunks
+        self._maximum_allowed_size: int = maximum_file_size
+        self._trailing_data: bytes = b''
 
     def __iter__(self):
         for chunk in self._chunks:
@@ -123,6 +119,10 @@ class ZipArchiveMemberStreamWrapper(FileChunkStreamWrapper):
     """Just an alias for FileChunkStreamWrapper for use when extracting Zip archive members using stream-unzip"""
 
 
+FileStreamIterator = TypeVar("FileStreamIterator", bound=Iterator[bytes])
+FileExtractionResult = TypeVar("FileExtractionResult", bound=tuple[Path, FileStreamIterator])
+
+
 class AbstractFileDataLoader(DataLoader, abc.ABC):
     """
     Base class for loading files over various transport mechanisms. This commits to streaming file data as much as
@@ -144,11 +144,9 @@ class AbstractFileDataLoader(DataLoader, abc.ABC):
 
     cache = False
 
-    _extraction_thresholds: ArchiveExtractionThresholds
-
-    def __init__(self, extraction_thresholds: ArchiveExtractionThresholds = None):
-        super().__init__()
-        self._extraction_thresholds = extraction_thresholds or ArchiveExtractionThresholds()
+    def __init__(self, extraction_thresholds: ArchiveExtractionThresholds = None, **kwargs):
+        super().__init__(**kwargs)
+        self._extraction_thresholds: ArchiveExtractionThresholds = extraction_thresholds or ArchiveExtractionThresholds()
 
     @staticmethod
     def should_skip_file(filename: str) -> bool:
@@ -161,7 +159,7 @@ class AbstractFileDataLoader(DataLoader, abc.ABC):
         filename = filename.lower()
         return any([name in filename for name in FILE_SKIP_PATTERNS])
 
-    def read_tgz_archive(self, archive: tarfile.TarFile) -> Iterator[bytes]:
+    def read_tgz_archive(self, archive: tarfile.TarFile) -> Iterator[FileExtractionResult]:
         """
         Utility for unpacking a tarball, asserting that the contents of that tarball fall within our file-size
         constraints
@@ -185,7 +183,7 @@ class AbstractFileDataLoader(DataLoader, abc.ABC):
 
             size_left -= wrapped_bytes.total_size
 
-    def read_zip_archive(self, raw_archive_stream) -> Iterator[bytes]:
+    def read_zip_archive(self, raw_archive_stream) -> Iterator[FileExtractionResult]:
         """
         Utility for unpacking a zip archive, asserting that the contents of that archive fall within our file-size
         constraints
@@ -221,27 +219,28 @@ class AbstractFileDataLoader(DataLoader, abc.ABC):
             #  untrusted/user input
             size_left -= wrapped_bytes.total_size
 
-    def extract_directory(self, directory: Path) -> Iterator[bytes]:
+    def extract_directory(self, directory: Path) -> Iterator[FileExtractionResult]:
         for path in directory.iterdir():
             yield from self.extract(path)
 
     @staticmethod
     @abc.abstractmethod
-    def read_file_stream(file: FileChunkStreamWrapper) -> Iterator[bytes]:
+    def read_file_stream(file: FileChunkStreamWrapper) -> FileStreamIterator:
         """
         This method will be called once we have reached a file that is fully uncompressed/untarred/etc.
         This is intended to allow concrete classes to have flexibility in the manner in which they yield data from the
         underlying file stream, whether that be raw chunks, lines, or as an entire blob (or something else entirely!)
         """
 
-    def extract(self, filepath: Path, file_stream: BufferedIOBase = None) -> Iterator[bytes]:
+    def extract(self, filepath: Path, file_stream: BufferedIOBase = None) -> Iterator[FileExtractionResult]:
         """
-        This method takes a filepath and potentially an already-open file_stream (if the filepath cannot be found
-        locally, the file_stream *must* be provided). Returns an Iterator of the underlying bytes of the file that
-        is fully decompressed/unzipped/untarred/etc., and ready to be parsed into some useful representation.
+        This method recursively extracts the contents of the file at the given filepath. If an open file_stream is
+        also provided, that file_stream will be operated on instead.
 
-        For archives, this Iterator will contain the bytes of all files present, except those that may be skipped (as
-        defined in should_skip_file()).
+        This method will ultimately return a sequence of tuples where the first item is the Path of the file that is
+        currently open (if we are extracting an archive/directory, then this will be the name of the file within
+        that location, not the name of the archive/directory itself), and the 2nd item is an Iterator of the bytes in
+        that file.
         """
         if file_stream is None and filepath.is_dir():
             yield from self.extract_directory(filepath)
@@ -276,7 +275,7 @@ class AbstractFileDataLoader(DataLoader, abc.ABC):
                     # We may see files like {name}.zip.gz/.json.gz, so make sure we handle that appropriately
                     if len(suffixes) == 1:
                         wrapped = FileChunkStreamWrapper(file)
-                        yield from self.read_file_stream(wrapped)
+                        yield filepath, self.read_file_stream(wrapped)
                     else:
                         new_path = Path(str(filepath).removesuffix(".gz"))
                         yield from self.extract(new_path, file)
@@ -286,17 +285,18 @@ class AbstractFileDataLoader(DataLoader, abc.ABC):
                 logger.info(f"Yielding raw file: {filepath}")
                 if file_stream:
                     wrapped = FileChunkStreamWrapper(file_stream)
-                    yield from self.read_file_stream(wrapped)
+                    yield filepath, self.read_file_stream(wrapped)
+
                 else:
                     with open(filepath, "rb") as file:
                         wrapped = FileChunkStreamWrapper(file)
-                        yield from self.read_file_stream(wrapped)
+                        yield filepath, self.read_file_stream(wrapped)
 
             case _:
                 raise ValueError(f"Unknown file format {''.join(filepath.suffixes)}")
 
     @abc.abstractmethod
-    def load_item(self, filepath: str | ParseResult) -> Iterator[bytes]:
+    def load_item(self, filepath: str | ParseResult) -> Iterator[FileExtractionResult]:
         """
         Since the concrete Loader may be fetching data from disparate data sources, this method should be
         responsible for grabbing the raw data stream for each file that may then be passed to extract().
@@ -305,7 +305,7 @@ class AbstractFileDataLoader(DataLoader, abc.ABC):
         will suffice
         """
 
-    async def batch_load_fn(self, keys: list[str]) -> list[Iterator[bytes]]:
+    async def batch_load_fn(self, keys: list[str]) -> list[Iterator[FileExtractionResult]]:
         return [self.load_item(filepath) for filepath in keys]
 
 

@@ -1,9 +1,11 @@
 import logging
 import orjson
-from typing import Generic, TypeVar, Iterator
+import ujson
+from typing import TypeVar, Iterator
 
 from aiodataloader import DataLoader
 
+from spark_log_parser.loaders import FileExtractionResult
 from spark_log_parser.loaders.https import HTTPFileLinesDataLoader, HTTPFileBlobDataLoader
 from spark_log_parser.loaders.local_file import LocalFileBlobDataLoader, LocalFileLinesDataLoader
 from spark_log_parser.loaders.s3 import S3FileBlobDataLoader, S3FileLinesDataLoader
@@ -13,53 +15,79 @@ RawJSONBlobDataLoader = TypeVar("BlobDataLoader", LocalFileBlobDataLoader, S3Fil
 logger = logging.getLogger("JSONLoaders")
 
 
-class JSONBlobDataLoader(DataLoader, Generic[RawJSONBlobDataLoader]):
+class JSONBlobDataLoader(DataLoader):
     cache = False
-    blob_data_loader: RawJSONBlobDataLoader
 
     def __init__(self, blob_data_loader: RawJSONBlobDataLoader, **kwargs):
         super().__init__(**kwargs)
-        self.blob_data_loader = blob_data_loader
+        self.blob_data_loader: RawJSONBlobDataLoader = blob_data_loader
+
+    @staticmethod
+    def _parse_as_json(data: FileExtractionResult):
+        _, blob = data
+        return orjson.loads(next(blob))
 
     async def batch_load_fn(self, keys):
         raw_datas = await self.blob_data_loader.load_many(keys)
         # We expect each "blob" here to be well-formed JSON, so parse each of them thusly
-        return [orjson.loads(next(raw_data)) for raw_data in raw_datas]
+        return [self._parse_as_json(next(raw_data)) for raw_data in raw_datas]
 
 
 RawJSONLinesDataLoader = TypeVar("LinesDataLoader", LocalFileLinesDataLoader, S3FileLinesDataLoader,
                                  HTTPFileLinesDataLoader)
 
 
-class JSONLinesDataLoader(DataLoader, Generic[RawJSONLinesDataLoader]):
+class JSONLinesDataLoader(DataLoader):
     cache = False
-    lines_data_loader: RawJSONLinesDataLoader
-
-    @staticmethod
-    def yield_json_lines(filename, lines) -> Iterator[str]:
-        num_bad_lines_seen = 0
-        for line in lines:
-            try:
-                yield orjson.loads(line)
-            # Note - this is largely here because we may get arbitrary file types in archives where we are
-            #  expecting eventlog files (which are JSON Lines). If we try to load those "lines" as
-            #  JSON objects, they will fail, and so this allows us to just skip those "bad" lines and
-            #  continue processing other files in the archive. However, this `except` could maybe be
-            #  more robust so that we aren't ignoring real issues! If we do encounter some bad lines,
-            #  we will at the very least log how many we hit
-            except orjson.JSONDecodeError:
-                num_bad_lines_seen += 1
-                # We have to continue here because these will be the lines for the top-level file. If this is an
-                #  archive, then it is possible for some lines to not be parse-able as JSON, but for others to be
-                continue
-
-        if num_bad_lines_seen > 0:
-            logger.info(f"Failed to parse {num_bad_lines_seen} JSON lines in top-level file: {filename}")
 
     def __init__(self, lines_data_loader: RawJSONLinesDataLoader, **kwargs):
         super().__init__(**kwargs)
-        self.lines_data_loader = lines_data_loader
+        self.lines_data_loader: RawJSONLinesDataLoader = lines_data_loader
+
+    @staticmethod
+    def _yield_json_lines(data: Iterator[FileExtractionResult]) -> Iterator[dict]:
+        for filepath, file_stream in data:
+            logger.info(f"Processing: {filepath}")
+
+            lines = iter(file_stream)
+            first_line = next(lines)
+            try:
+                json_line = orjson.loads(first_line)
+                yield json_line
+
+                # If we were able to successfully parse the first line as a JSON object, then we should be able
+                #  to assume the rest of the lines in the file are well-formed JSON objects
+                for line in lines:
+                    yield orjson.loads(line)
+            except orjson.JSONDecodeError:
+                # If the first line is not parseable as a JSON object, try to parse the whole file as a JSON Object
+                #  as well, and yield that as a line instead.
+                # We do this for a few reasons -
+                #  - Sometimes regular JSON files are delivered in archives along with eventlog files (which are JSON
+                #     Lines). These JSON files may contain valuable information that we don't want to drop on the floor
+                #     (for example, we may receive Databricks pricing information, which we may be able to use!)
+                #  - We may not be able to tell without opening the file whether the eventlog provided to us is a "raw"
+                #     eventlog (i.e. delivered to us in exactly the way Spark output them), or if it is an
+                #     already-parsed log.
+                #
+                # This means that, in a sense, we treat regular JSON files as a special case of JSON Lines files
+                for line in lines:
+                    first_line += line
+
+                try:
+                    yield orjson.loads(first_line)
+                except orjson.JSONDecodeError:
+                    # ujson is a little bit more lenient than orjson. In the interest of backwards compatibility, since
+                    #  we used to write out parsed logs that could contain invalid JSON values like NaN (which orjson
+                    #  does not support), we can try parsing this with data with a more lenient parser.
+                    try:
+                        yield ujson.loads(first_line)
+                        # Log a warning when this happens so that we can hopefully have some indication of when it's OK
+                        #  to remove this logic
+                        logger.warning(f"Was able to parse file {filepath} with ujson but not orjson")
+                    except ujson.JSONDecodeError:
+                        logger.warning(f"Could not parse file {filepath} as JSON - skipping")
 
     async def batch_load_fn(self, keys):
         raw_datas = await self.lines_data_loader.load_many(keys)
-        return [self.yield_json_lines(key, data) for (key, data) in zip(keys, raw_datas)]
+        return [self._yield_json_lines(data) for data in raw_datas]

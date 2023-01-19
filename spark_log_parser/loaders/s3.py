@@ -4,22 +4,9 @@ import boto3
 from pathlib import Path
 from urllib.parse import ParseResult, urlparse
 
-from botocore.response import StreamingBody
+from botocore.client import BaseClient
 
-from spark_log_parser.loaders import AbstractFileDataLoader, BlobFileReaderMixin, LinesFileReaderMixin, \
-    FileChunkStreamWrapper
-
-
-class S3StreamingBodyFileWrapper(FileChunkStreamWrapper):
-    """
-    Small wrapper around botocore.StreamingBody that exposes a lines iterator, in keeping with "pythonic" conventions.
-    botocore.StreamingBody by default iterates over raw chunks of the input stream vs. in a line-delimited manner. This
-    makes some sense, in general, since large files may not have newlines to split on. But as we expect to largely be
-    dealing with line-delimited eventlog files, this default makes more sense for us to use.
-    """
-
-    def __init__(self, body: StreamingBody, **kwargs):
-        super().__init__(**kwargs, chunks=body.iter_chunks(chunk_size=1024 * 1024))
+from spark_log_parser.loaders import AbstractFileDataLoader, BlobFileReaderMixin, LinesFileReaderMixin
 
 
 class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
@@ -27,10 +14,9 @@ class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
     Abstract class that supports loading files directly from S3
     """
 
-    _s3 = None
-
-    def __init__(self):
-        super().__init__()
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._s3: BaseClient | None = None
 
     @property
     def s3(self):
@@ -71,8 +57,7 @@ class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
             # Wrap the botocore.response.StreamingBody and return that so that subsequent extraction can operate on the
             #  stream vs. loading all the files into memory
             data = self.s3.get_object(Bucket=bucket, Key=content["Key"])["Body"]
-            wrapped = S3StreamingBodyFileWrapper(data)
-            file_streams.append(wrapped)
+            file_streams.append(data)
 
         for (content, filestream) in zip(contents_to_fetch, file_streams):
             yield from self.extract(Path(content["Key"]), filestream)

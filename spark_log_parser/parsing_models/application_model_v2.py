@@ -1,12 +1,13 @@
 import abc
 import asyncio
 import gzip
-import json
+import orjson
 import logging
 import os
 import time
 from collections import defaultdict
 from typing import Generic, TypeVar
+from urllib.parse import urlparse
 
 import boto3
 import numpy as np
@@ -16,29 +17,32 @@ from aiodataloader import DataLoader
 from .application_model import ApplicationModel
 from .validation_configs import ConfigValidationDatabricks, ConfigValidationEMR
 from .validation_event_data import EventDataValidation
-from ..loaders.json import JSONBlobDataLoader, JSONLinesDataLoader, RawJSONLinesDataLoader, RawJSONBlobDataLoader
-from ..loaders.local_file import LocalFileBlobDataLoader, LocalFileLinesDataLoader
-from ..loaders.s3 import S3FileBlobDataLoader, S3FileLinesDataLoader
+from ..loaders import ArchiveExtractionThresholds
+from ..loaders.https import HTTPFileLinesDataLoader
+from ..loaders.json import JSONBlobDataLoader, JSONLinesDataLoader
+from ..loaders.local_file import LocalFileLinesDataLoader
+from ..loaders.s3 import S3FileLinesDataLoader
+
+logger = logging.getLogger("SparkApplication")
 
 
 class SparkApplication:
-    # TODO - are these booleans actually necessary? Would `spark_app.sqlData is not None` suffice?
-    existsSQL: bool = False
-    sqlData: pd.DataFrame = None
-
-    existsExecutors: bool = False
-    executorData: pd.DataFrame = None
-
-    metadata: dict = {}
-
-    # TODO - these DataFrames should be better documented
-    jobData: pd.DataFrame = None
-    stageDate: pd.DataFrame = None
-    taskData: pd.DataFrame = None
-    accumData: pd.DataFrame = None
 
     def __init__(self):
-        return
+        # TODO - are these booleans actually necessary? Would `spark_app.sqlData is not None` suffice?
+        self.existsSQL: bool = False
+        self.sqlData: pd.DataFrame = None
+
+        self.existsExecutors: bool = False
+        self.executorData: pd.DataFrame = None
+
+        self.metadata: dict = {}
+
+        # TODO - these DataFrames should be better documented
+        self.jobData: pd.DataFrame = None
+        self.stageData: pd.DataFrame = None
+        self.taskData: pd.DataFrame = None
+        self.accumData: pd.DataFrame = None
 
     def to_dict(self):
         """
@@ -61,6 +65,14 @@ class SparkApplication:
         save_data["metadata"] = self.metadata
         return save_data
 
+    @staticmethod
+    def is_parsed_spark_app(data):
+        if not isinstance(data, dict):
+            return False
+
+        # TODO - this should be more robust, but matches the current logic in eventlog.py
+        return "jobData" in data
+
     def save(self, filepath=None, compress=False):
         save_data = self.to_dict()
         if (filepath is not None) and ("s3://" in filepath):
@@ -78,12 +90,12 @@ class SparkApplication:
             filepath = inputFile + "-sync"
 
         if compress is False:
-            with open(filepath + ".json", "w") as fout:
-                fout.write(json.dumps(saveDat))
+            with open(filepath + ".json", "wb") as fout:
+                fout.write(orjson.dumps(saveDat))
         elif compress is True:
-            with gzip.open(filepath + ".json.gz", "w") as fout:
-                fout.write(json.dumps(saveDat).encode("ascii"))
-        logging.info("Saved object locally to: %s" % (filepath))
+            with gzip.open(filepath + ".json.gz", "wb") as fout:
+                fout.write(orjson.dumps(saveDat))
+        logger.info("Saved object locally to: %s" % (filepath))
 
     def save_to_s3(self, saveDat, filepath, compress):
         s3 = boto3.client("s3")
@@ -94,81 +106,129 @@ class SparkApplication:
         key = ("/".join(path[1:])).lstrip("/") + ".json"
 
         if compress is False:
-            s3.put_object(Bucket=bucket, Body=json.dumps(saveDat).encode("utf-8"), Key=key)
+            s3.put_object(Bucket=bucket, Body=orjson.dumps(saveDat), Key=key)
         else:
-            dat = gzip.compress(json.dumps(saveDat).encode("utf-8"))
+            dat = gzip.compress(orjson.dumps(saveDat))
             s3.put_object(Bucket=bucket, Body=dat, Key=key + ".gz")
 
-        logging.info("Saved object to cloud: %s" % (key))
+        logger.info("Saved object to cloud: %s" % (key))
 
 
-DataType = TypeVar("DataType")
+SparkApplicationRawDataType = TypeVar("SparkApplicationRawDataType")
+SparkApplicationLoaderKey = TypeVar("SparkApplicationLoaderKey")
 
 
-class AbstractSparkApplicationDataLoader(DataLoader, Generic[DataType], abc.ABC):
+class AbstractSparkApplicationDataLoader(DataLoader, Generic[SparkApplicationLoaderKey, SparkApplicationRawDataType], abc.ABC):
     """
     Defines the methods that other data loaders should implement in order to appropriately construct
-    some SparkApplication. The order in which these methods are called is defined in construct_spark_application
+    some SparkApplication. The order in which these methods are called is defined in construct_spark_application.
     """
 
     @abc.abstractmethod
-    async def load_raw_datas(self, keys) -> list[DataType]:
+    async def load_raw_datas(self, keys: list[SparkApplicationLoaderKey]) -> list[SparkApplicationRawDataType | Exception]:
         """
-        Method that should return the data that is our "source-of-truth" (i.e. that data from which we will be
-        constructing the SparkApplication)
+        Implementors of this method should return the data that will be the "source-of-truth", i.e. that data from
+        which this concrete class will be constructing the SparkApplication. If the underlying data is not able to
+        be loaded for some reason, implementors should return an Exception for DataLoader to raise to the caller.
         """
 
     @abc.abstractmethod
-    def compute_sql_info(self, raw_data: DataType, spark_app: SparkApplication) -> SparkApplication:
-        """ TODO """
+    def init_spark_application(self, raw_data: SparkApplicationRawDataType) -> SparkApplication:
+        """
+        Allows subclasses to provide their own instance of SparkApplication (or some sub-class)
+        """
+        return SparkApplication()
+
+    @abc.abstractmethod
+    def compute_sql_info(self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication) -> SparkApplication:
+        """
+        This method is responsible for setting the following fields on spark_app:
+
+            - existsSQL
+            - sqlData
+        """
 
     @abc.abstractmethod
     def compute_executor_info(
-        self, raw_data: DataType, spark_app: SparkApplication
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
     ) -> SparkApplication:
-        """ TODO """
+        """
+        This method is responsible for setting the following fields on spark_app:
+
+            - existsExecutors
+            - executorData
+        """
 
     @abc.abstractmethod
     def compute_all_job_data(
-        self, raw_data: DataType, spark_app: SparkApplication
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
     ) -> SparkApplication:
-        """ TODO """
+        """
+        This method is responsible for setting the following fields on spark_app:
 
-    @abc.abstractmethod
-    def compute_all_task_data(
-        self, raw_data: DataType, spark_app: SparkApplication
-    ) -> SparkApplication:
-        """ TODO """
+            - jobData
+        """
 
     @abc.abstractmethod
     def compute_all_stage_data(
-        self, raw_data: DataType, spark_app: SparkApplication
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
     ) -> SparkApplication:
-        """ TODO """
+        """
+        This method is responsible for setting the following fields on spark_app:
+
+            - stageData
+        """
+
+    @abc.abstractmethod
+    def compute_all_task_data(
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
+    ) -> SparkApplication:
+        """
+        This method is responsible for setting the following fields on spark_app:
+
+            - taskData
+        """
 
     @abc.abstractmethod
     def compute_all_driver_accum_data(
-        self, raw_data: DataType, spark_app: SparkApplication
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
     ) -> SparkApplication:
-        """ TODO """
+        """
+        This method is responsible for setting the following fields on spark_app:
+
+            - accumData
+        """
 
     @abc.abstractmethod
     def compute_all_metadata(
-        self, raw_data: DataType, spark_app: SparkApplication
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
     ) -> SparkApplication:
-        """ TODO """
+        """
+        This method is responsible for setting the following fields on spark_app:
+
+            - metadata
+        """
 
     @abc.abstractmethod
     def compute_recent_events(
-        self, raw_data: DataType, spark_app: SparkApplication
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
     ) -> SparkApplication:
-        """ TODO """
+        """
+        This method is responsible for updating the "time_since_last_event" value on both:
 
-    def construct_spark_application(self, raw_data) -> SparkApplication:
+            - spark_app.stageData
+            - spark_app.sqlData
+
+        This value should be a list of timestamps where each timestamp is the most recent Task or SQL event
+        to complete before this stage/SQL event started executing.
+        """
+
+    def construct_spark_application(self, key: SparkApplicationLoaderKey,
+                                    raw_data: SparkApplicationRawDataType) -> SparkApplication:
         """
         Generic 'recipe' for constructing a SparkApplication from some raw source of data.
         """
-        spark_app = SparkApplication()
+        spark_app = self.init_spark_application(raw_data)
         spark_app = self.compute_sql_info(raw_data, spark_app)
         spark_app = self.compute_executor_info(raw_data, spark_app)
         spark_app = self.compute_all_job_data(raw_data, spark_app)
@@ -179,30 +239,32 @@ class AbstractSparkApplicationDataLoader(DataLoader, Generic[DataType], abc.ABC)
         spark_app = self.compute_recent_events(raw_data, spark_app)
         return spark_app
 
-    async def batch_load_fn(self, keys):
+    async def batch_load_fn(self, keys: list[SparkApplicationLoaderKey]):
         raw_datas = await self.load_raw_datas(keys)
-        return [self.construct_spark_application(k) for k in raw_datas]
+        # Make sure we bubble up any Exceptions from load_raw_datas appropriately
+        return [self.construct_spark_application(key, data) if not isinstance(data, Exception) else data
+                for (key, data) in zip(keys, raw_datas)]
 
 
-class ParsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[dict], Generic[RawJSONBlobDataLoader]):
+class ParsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[str, dict]):
     """
     Creates a SparkApplication from a parsed JSON representation of that application. Useful for re-hydrating
     parsed logs that were saved somewhere (or submitted directly to us)
     """
 
-    _json_data_loader: JSONBlobDataLoader[RawJSONBlobDataLoader]
-
-    def __init__(self, json_loader: JSONBlobDataLoader[RawJSONBlobDataLoader], **kwargs):
+    def __init__(self, json_loader: JSONBlobDataLoader, **kwargs):
         super().__init__(**kwargs)
 
-        assert json_loader
-        self._json_data_loader = json_loader
+        self._json_data_loader: JSONBlobDataLoader = json_loader
 
     async def load_raw_datas(self, keys) -> list[dict]:
         """
         Loads many already-parsed eventlogs from the provided filepaths
         """
         return await self._json_data_loader.load_many(keys)
+
+    def init_spark_application(self, raw_data) -> SparkApplication:
+        return super().init_spark_application(raw_data)
 
     def compute_recent_events(
         self, raw_data: dict, spark_app: SparkApplication
@@ -283,27 +345,17 @@ class ParsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[dict], 
 
     def compute_all_metadata(self, raw_data: dict, spark_app: SparkApplication) -> SparkApplication:
         spark_app.metadata = raw_data.get("metadata", {})
-
-        # TODO - still necessary? Can we delete this?
-        # This is for legacy support and should be removed after it is in production for a few
-        # weeks. Introduced 3/9/2022 by SDG.
-        if "sparkMetadata" in raw_data:
-            spark_app.sparkMetadata = raw_data.pop("sparkMetadata")
-
         return spark_app
 
 
-class UnparsedLogSparkApplicationLoader(
-    AbstractSparkApplicationDataLoader[ApplicationModel], Generic[RawJSONLinesDataLoader]
-):
+class UnparsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[str, ApplicationModel]):
     """
     From a raw set of Spark log lines, constructs a SparkApplication
     """
-    _json_lines_loader: JSONLinesDataLoader[RawJSONLinesDataLoader] = None
 
     def __init__(
         self,
-        json_lines_loader: JSONLinesDataLoader[RawJSONLinesDataLoader],
+        json_lines_loader: JSONLinesDataLoader,
         stdout_path: str = None,
         debug: bool = False,
         **kwargs,
@@ -313,15 +365,16 @@ class UnparsedLogSparkApplicationLoader(
         self.stdout_path = stdout_path
         self.debug = debug
 
-        self._json_lines_loader = json_lines_loader
+        self._json_lines_loader: JSONLinesDataLoader = json_lines_loader
 
-    def _validate_app(self, app_model: ApplicationModel):
+    @staticmethod
+    def validate_app_model(app_model: ApplicationModel):
         match app_model:
             case ApplicationModel(cloud_platform="emr"):
-                val1 = ConfigValidationEMR(app=app_model, debug=self.debug)
+                val1 = ConfigValidationEMR(app=app_model)
 
             case ApplicationModel(cloud_platform="databricks"):
-                val1 = ConfigValidationDatabricks(app=app_model, debug=self.debug)
+                val1 = ConfigValidationDatabricks(app=app_model)
 
             case _:
                 raise ValueError(
@@ -330,20 +383,27 @@ class UnparsedLogSparkApplicationLoader(
 
         val1.validate()
 
-        val2 = EventDataValidation(app=app_model, debug=self.debug)
+        val2 = EventDataValidation(app=app_model)
         val2.validate()
 
-    async def load_raw_datas(self, keys) -> list[ApplicationModel]:
-        """ """
+    async def load_raw_datas(self, keys: list[str]) -> list[ApplicationModel]:
+        """
+        Returns a list of ApplicationModels, provided some keys pointing to some raw eventlog file locations. These
+        models have not yet been validated, since we are loading the "raw" data here.
+        """
+        if self._json_lines_loader is None:
+            raise RuntimeError("Instance was initialized without a json_lines_loader, and therefore can't be used "
+                               + "to load raw data.")
+
         raw_datas = await self._json_lines_loader.load_many(keys)
 
         app_models = [ApplicationModel(log_lines=raw_data) for raw_data in raw_datas]
 
-        for app_model in app_models:
-            # TODO - probably somewhere better to put this...
-            self._validate_app(app_model)
-
         return app_models
+
+    def init_spark_application(self, raw_data: ApplicationModel) -> SparkApplication:
+        self.validate_app_model(raw_data)
+        return super().init_spark_application(raw_data)
 
     def compute_sql_info(
         self, raw_data: ApplicationModel, spark_app: SparkApplication
@@ -351,7 +411,7 @@ class UnparsedLogSparkApplicationLoader(
         # Get sql info if it exists
         app_model = raw_data
         if not (hasattr(app_model, "sql") and app_model.sql):
-            logging.warning("No sql attribute found.")
+            logger.warning("No sql attribute found.")
             spark_app.existsSQL = False
             return spark_app
 
@@ -373,7 +433,7 @@ class UnparsedLogSparkApplicationLoader(
                     job.submission_time <= sql["end_time"]
                 ):
                     if "completion_time" not in job.__dict__:
-                        logging.debug(
+                        logger.debug(
                             f"Job {jid} missing completion time. Substituting with associated SQL {sqlid} completion time"
                         )
                         job.completion_time = sql["end_time"]
@@ -411,7 +471,7 @@ class UnparsedLogSparkApplicationLoader(
     ) -> SparkApplication:
         app_model = raw_data
         if not (hasattr(app_model, "executors") and app_model.executors):
-            logging.warning("Executor attribute not found.")
+            logger.warning("Executor attribute not found.")
             return spark_app
 
         spark_app.existsExecutors = True
@@ -475,7 +535,7 @@ class UnparsedLogSparkApplicationLoader(
                     for jid in row["job_ids"]:
                         df.at[jid, "sql_id"] = qid
 
-        logging.info("Aggregated job data [%.2f]" % (time.time() - t1))
+        logger.info("Aggregated job data [%.2f]" % (time.time() - t1))
 
         spark_app.jobData = df
 
@@ -649,7 +709,7 @@ class UnparsedLogSparkApplicationLoader(
         )
 
         # Report timing and save the dataframe
-        logging.info("Aggregated task data [%.2fs]" % (time.time() - t1))
+        logger.info("Aggregated task data [%.2fs]" % (time.time() - t1))
         spark_app.taskData = df
         return spark_app
 
@@ -802,7 +862,7 @@ class UnparsedLogSparkApplicationLoader(
             .set_index("stage_id")
         )
 
-        logging.info("Aggregated stage data [%.2fs]" % (time.time() - t1))
+        logger.info("Aggregated stage data [%.2fs]" % (time.time() - t1))
         spark_app.stageData = df
         return spark_app
 
@@ -834,7 +894,7 @@ class UnparsedLogSparkApplicationLoader(
         # if not driver accum update values, then empty dataframe
         else:
             df = pd.DataFrame()
-        logging.info("Aggregated accum data [%.2fs]" % (time.time() - t1))
+        logger.info("Aggregated accum data [%.2fs]" % (time.time() - t1))
 
         spark_app.accumData = df
         return spark_app
@@ -899,55 +959,168 @@ class UnparsedLogSparkApplicationLoader(
         return spark_app
 
 
-"""
-TODO - this function maintains the filepath inputs in order to make migration easier. This should be
-removed at some point.
-"""
+class AbstractAmbiguousLogFormatSparkApplicationLoader(
+        AbstractSparkApplicationDataLoader[SparkApplicationLoaderKey, tuple[bool, dict | ApplicationModel]], abc.ABC):
+
+    def __init__(
+        self,
+        json_lines_loader: JSONLinesDataLoader,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+
+        self._json_lines_loader: JSONLinesDataLoader = json_lines_loader
+        # These "sub-loaders" won't actually be loading the raw data, so we don't need to pass them any dataloaders
+        #  We just want to use them to construct our SparkApplications based on whether the data handed to us is a
+        #  parsed or unparsed eventlog
+        self._parsed_app_loader: ParsedLogSparkApplicationLoader = ParsedLogSparkApplicationLoader(None)
+        self._unparsed_app_loader: UnparsedLogSparkApplicationLoader = UnparsedLogSparkApplicationLoader(None)
+
+    def _construct_from_parsed_representation(self, key: str, data: tuple[bool, dict]):
+        return self._parsed_app_loader.construct_spark_application(key, data)
+
+    def _construct_from_unparsed_representation(self, key: str, data: tuple[bool, ApplicationModel]):
+        return self._unparsed_app_loader.construct_spark_application(key, data)
+
+    async def _load_raw_datas(self, keys: list[str]) -> list[tuple[bool, dict | ApplicationModel | Exception]]:
+        """
+        Given some eventlog locations, determines the data format of the file (i.e. raw vs already-parsed) and returns
+        the appropriate in-memory representation of that file.
+        """
+        raw_datas = await self._json_lines_loader.load_many(keys)
+
+        ret = []
+        for key, raw_data in zip(keys, raw_datas):
+            line = next(raw_data)
+            # This assumes that for parsed apps, the first "line" from the file will be the fully-formed dictionary
+            #  representation of a SparkApplication. This may not be true over time... we should strive to keep this
+            #  check "cheap", however
+            if SparkApplication.is_parsed_spark_app(line):
+                ret.append((True, line))
+            else:
+                # ApplicationModel expects to receive all the lines, so just wrap the line we already read in a
+                #  generator so that we can re-yield it appropriately
+                def lines():
+                    yield line
+                    yield from raw_data
+
+                try:
+                    app_model = ApplicationModel(log_lines=lines())
+                    ret.append((False, app_model))
+                except Exception as e:
+                    logger.error(f"Encountered an exception loading eventlog located at: {key}", exc_info=e)
+                    ret.append((False, e))
+
+        return ret
+
+    def _construct_base_spark_application(
+        self, key: str, raw_data: tuple[bool, dict | ApplicationModel | Exception]
+    ) -> SparkApplication | Exception:
+        """
+        Given an initial piece of raw_data, calls into the appropriate "sub-loader" based on the detected file format,
+        i.e. whether the eventlog was delivered to us already-parsed.
+        """
+        is_parsed, data = raw_data
+
+        # If we weren't able to create a SparkApplication out of one of the "keys" provided to us, we want to bubble
+        #  that exception upwards so that DataLoader will raise it to the caller when the load() is await-ed
+        if isinstance(data, Exception):
+            spark_app = data
+        elif is_parsed:
+            spark_app = self._construct_from_parsed_representation(key, data)
+        else:
+            spark_app = self._construct_from_unparsed_representation(key, data)
+
+        return spark_app
+
+    # None of these abstract methods actually need to be implemented because we will be calling into the proper
+    #  un/parsed SparkApplication loader based on the underlying data, and those loaders have these methods
+    #  implemented already
+    def init_spark_application(self, raw_data) -> SparkApplication:
+        """See comment above for why this is left un-implemented"""
+        pass
+
+    def compute_sql_info(self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication) -> SparkApplication:
+        """See comment above for why this is left un-implemented"""
+        pass
+
+    def compute_executor_info(self, raw_data: SparkApplicationRawDataType,
+                              spark_app: SparkApplication) -> SparkApplication:
+        """See comment above for why this is left un-implemented"""
+        pass
+
+    def compute_all_job_data(self, raw_data: SparkApplicationRawDataType,
+                             spark_app: SparkApplication) -> SparkApplication:
+        """See comment above for why this is left un-implemented"""
+        pass
+
+    def compute_all_task_data(self, raw_data: SparkApplicationRawDataType,
+                              spark_app: SparkApplication) -> SparkApplication:
+        """See comment above for why this is left un-implemented"""
+        pass
+
+    def compute_all_stage_data(self, raw_data: SparkApplicationRawDataType,
+                               spark_app: SparkApplication) -> SparkApplication:
+        """See comment above for why this is left un-implemented"""
+        pass
+
+    def compute_all_driver_accum_data(self, raw_data: SparkApplicationRawDataType,
+                                      spark_app: SparkApplication) -> SparkApplication:
+        """See comment above for why this is left un-implemented"""
+        pass
+
+    def compute_all_metadata(self, raw_data: SparkApplicationRawDataType,
+                             spark_app: SparkApplication) -> SparkApplication:
+        """See comment above for why this is left un-implemented"""
+        pass
+
+    def compute_recent_events(self, raw_data: SparkApplicationRawDataType,
+                              spark_app: SparkApplication) -> SparkApplication:
+        """See comment above for why this is left un-implemented"""
+        pass
 
 
-async def create_spark_application_async(
-    spark_eventlog_parsed_path=None,
-    spark_eventlog_path=None,
-    stdout=None,
-    debug=False,
-) -> SparkApplication:
-    """ """
+class AmbiguousLogFormatSparkApplicationLoader(AbstractAmbiguousLogFormatSparkApplicationLoader[str]):
+    """
+    Much of the time, we may not know whether a file given to us is for a parsed or unparsed eventlog without opening it
+    up first. But, we don't want to have to open up a file and just throw it away if it's not what we initially
+    expected. This class, then, may be used when this information is ambiguous to us, and it will handle calling into
+    the proper "sub-loader" transparently (and without having to re-load anything)
+    """
 
-    path = spark_eventlog_parsed_path or spark_eventlog_path
+    async def load_raw_datas(self, keys: list[str]) -> list[tuple[bool, dict | ApplicationModel | Exception]]:
+        return await self._load_raw_datas(keys)
+
+    def construct_spark_application(self, key: str, raw_data: tuple[bool, dict | ApplicationModel | Exception]) -> SparkApplication:
+        return self._construct_base_spark_application(key, raw_data)
+
+
+def create_spark_application(*, path, thresholds=None) -> SparkApplication:
+    """
+    Convenience function for constructing SparkApplication objects
+    """
     if not path:
         raise ValueError("No provided eventlog location.")
 
-    is_parsed = spark_eventlog_parsed_path is not None
-    is_s3_path = (path is not None) and ("s3://" in path)
+    path = str(path)
+    parsed_path = urlparse(path)
 
-    loader: ParsedLogSparkApplicationLoader | UnparsedLogSparkApplicationLoader = None
-    match is_parsed, is_s3_path:
+    thresholds = thresholds if thresholds is not None else ArchiveExtractionThresholds()
 
-        case (True, True):
-            file_loader = JSONBlobDataLoader(blob_data_loader=S3FileBlobDataLoader())
-            loader = ParsedLogSparkApplicationLoader(json_loader=file_loader)
+    async def create_spark_app():
+        match parsed_path.scheme:
+            case "s3":
+                file_loader = S3FileLinesDataLoader(extraction_thresholds=thresholds)
 
-        case (True, False):
-            file_loader = JSONBlobDataLoader(blob_data_loader=LocalFileBlobDataLoader())
-            loader = ParsedLogSparkApplicationLoader(json_loader=file_loader)
+            case "http" | "https":
+                file_loader = HTTPFileLinesDataLoader(extraction_thresholds=thresholds)
 
-        case (False, True):
-            file_loader = JSONLinesDataLoader(lines_data_loader=S3FileLinesDataLoader())
-            loader = UnparsedLogSparkApplicationLoader(
-                json_lines_loader=file_loader, stdout_path=stdout, debug=debug
-            )
+            case "file" | _:
+                file_loader = LocalFileLinesDataLoader(extraction_thresholds=thresholds)
 
-        case (False, False):
-            file_loader = JSONLinesDataLoader(lines_data_loader=LocalFileLinesDataLoader())
-            loader = UnparsedLogSparkApplicationLoader(
-                json_lines_loader=file_loader, stdout_path=stdout, debug=debug
-            )
+        json_loader = JSONLinesDataLoader(lines_data_loader=file_loader)
+        app_loader = AmbiguousLogFormatSparkApplicationLoader(json_lines_loader=json_loader)
 
-    return await loader.load(path)
+        return await app_loader.load(path)
 
-
-def create_spark_application(**kwargs) -> SparkApplication:
-    """
-    Thin wrapper around create_spark_application_async to construct instances in a blocking manner
-    """
-    return asyncio.run(create_spark_application_async(**kwargs))
+    return asyncio.run(create_spark_app())
