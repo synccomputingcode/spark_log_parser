@@ -118,9 +118,7 @@ SparkApplicationRawDataType = TypeVar("SparkApplicationRawDataType")
 SparkApplicationLoaderKey = TypeVar("SparkApplicationLoaderKey")
 
 
-class AbstractSparkApplicationDataLoader(abc.ABC,
-                                         Generic[SparkApplicationLoaderKey, SparkApplicationRawDataType],
-                                         DataLoader):
+class AbstractSparkApplicationDataLoader(DataLoader, Generic[SparkApplicationLoaderKey, SparkApplicationRawDataType], abc.ABC):
     """
     Defines the methods that other data loaders should implement in order to appropriately construct
     some SparkApplication. The order in which these methods are called is defined in construct_spark_application.
