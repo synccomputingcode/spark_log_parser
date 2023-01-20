@@ -4,13 +4,16 @@ from pathlib import Path
 import requests
 from urllib.parse import ParseResult, urlparse
 
-from spark_log_parser.loaders import AbstractFileDataLoader, BlobFileReaderMixin, LinesFileReaderMixin
+from spark_log_parser.loaders import AbstractFileDataLoader, BlobFileReaderMixin, LinesFileReaderMixin, \
+    FileChunkStreamWrapper
 
 
 class AbstractHTTPFileDataLoader(AbstractFileDataLoader, abc.ABC):
     """
     Abstract class that implements the `load_item` method for fetching files over HTTP/S
     """
+
+    _STREAM_CHUNK_SIZE = 1024 * 1024  # 1MB
 
     def _validate_url(self, url: ParseResult | str) -> ParseResult:
         parsed_url: ParseResult = url if isinstance(url, ParseResult) else urlparse(url)
@@ -25,8 +28,8 @@ class AbstractHTTPFileDataLoader(AbstractFileDataLoader, abc.ABC):
         if not int(response.headers.get("Content-Length", 0)):
             raise AssertionError("Download is empty")
 
-        stream = response.raw
-        yield from self.extract(Path(url), stream)
+        wrapped = FileChunkStreamWrapper(response.iter_content(chunk_size=self._STREAM_CHUNK_SIZE))
+        yield from self.extract(Path(url), wrapped)
 
 
 class HTTPFileBlobDataLoader(BlobFileReaderMixin, AbstractHTTPFileDataLoader):

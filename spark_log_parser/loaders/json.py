@@ -1,4 +1,6 @@
 import logging
+import time
+
 import orjson
 import ujson
 from typing import TypeVar, Iterator
@@ -77,7 +79,7 @@ class JSONLinesDataLoader(DataLoader):
                 try:
                     yield orjson.loads(first_line)
                 except orjson.JSONDecodeError:
-                    # ujson is a little bit more lenient than orjson. In the interest of backwards compatibility, since
+                    # ujson is a little more lenient than orjson. In the interest of backwards compatibility, since
                     #  we used to write out parsed logs that could contain invalid JSON values like NaN (which orjson
                     #  does not support), we can try parsing this with data with a more lenient parser.
                     try:

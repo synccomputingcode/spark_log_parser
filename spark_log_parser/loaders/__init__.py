@@ -283,13 +283,17 @@ class AbstractFileDataLoader(DataLoader, abc.ABC):
             # If the Path is not a directory and has no suffix, it will match []
             case [".json"] | [".log"] | []:
                 logger.info(f"Yielding raw file: {filepath}")
-                if file_stream:
-                    wrapped = FileChunkStreamWrapper(file_stream)
-                    yield filepath, self.read_file_stream(wrapped)
+                match file_stream:
+                    case None:
+                        with open(filepath, "rb") as file:
+                            wrapped = FileChunkStreamWrapper(file)
+                            yield filepath, self.read_file_stream(wrapped)
 
-                else:
-                    with open(filepath, "rb") as file:
-                        wrapped = FileChunkStreamWrapper(file)
+                    case FileChunkStreamWrapper():
+                        yield filepath, self.read_file_stream(file_stream)
+
+                    case _:
+                        wrapped = FileChunkStreamWrapper(file_stream)
                         yield filepath, self.read_file_stream(wrapped)
 
             case _:
