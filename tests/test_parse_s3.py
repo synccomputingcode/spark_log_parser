@@ -9,7 +9,6 @@ import boto3 as boto
 from botocore.stub import Stubber
 from botocore.response import StreamingBody
 
-import spark_log_parser.loaders.s3 as s3_loader
 from spark_log_parser.loaders import AbstractFileDataLoader
 from spark_log_parser.parsing_models.application_model_v2 import create_spark_application
 from tests import ROOT_DIR

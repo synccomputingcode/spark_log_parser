@@ -13,6 +13,7 @@ from spark_log_parser.loaders import AbstractFileDataLoader, BlobFileReaderMixin
 # boto3 clients are threadsafe, so we can use a singleton for all instances
 S3_CLIENT = boto3.client("s3")
 
+
 class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
     """
     Abstract class that supports loading files directly from S3
