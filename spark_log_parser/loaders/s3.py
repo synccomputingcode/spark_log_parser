@@ -5,8 +5,13 @@ from pathlib import Path
 from urllib.parse import ParseResult, urlparse
 
 from botocore.client import BaseClient
+from botocore.response import StreamingBody
 
-from spark_log_parser.loaders import AbstractFileDataLoader, BlobFileReaderMixin, LinesFileReaderMixin
+from spark_log_parser.loaders import AbstractFileDataLoader, BlobFileReaderMixin, LinesFileReaderMixin, \
+    FileChunkStreamWrapper
+
+# boto3 clients are threadsafe, so we can use a singleton for all instances
+S3_CLIENT = boto3.client("s3")
 
 
 class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
@@ -14,15 +19,14 @@ class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
     Abstract class that supports loading files directly from S3
     """
 
+    _STREAM_CHUNK_SIZE = 1024 * 1024  # 1MB
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._s3: BaseClient | None = None
+        self._s3: BaseClient = S3_CLIENT
 
     @property
     def s3(self):
-        if self._s3 is None:
-            self._s3 = boto3.client("s3")
-
         return self._s3
 
     def load_item(self, filepath):
@@ -56,8 +60,9 @@ class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
         for content in contents_to_fetch:
             # Wrap the botocore.response.StreamingBody and return that so that subsequent extraction can operate on the
             #  stream vs. loading all the files into memory
-            data = self.s3.get_object(Bucket=bucket, Key=content["Key"])["Body"]
-            file_streams.append(data)
+            data: StreamingBody = self.s3.get_object(Bucket=bucket, Key=content["Key"])["Body"]
+            wrapped = FileChunkStreamWrapper(data.iter_chunks(self._STREAM_CHUNK_SIZE))
+            file_streams.append(wrapped)
 
         for (content, filestream) in zip(contents_to_fetch, file_streams):
             yield from self.extract(Path(content["Key"]), filestream)

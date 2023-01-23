@@ -13,7 +13,7 @@ from spark_log_parser.loaders import AbstractFileDataLoader
 from spark_log_parser.parsing_models.application_model_v2 import create_spark_application
 from tests import ROOT_DIR
 
-BOTO_CLIENT_STUB_TARGET = "boto3.client"
+BOTO_CLIENT_STUB_TARGET = "spark_log_parser.loaders.s3.S3_CLIENT"
 S3_GET_OBJECT_CONTENT_TYPE = "application/octet-stream"
 
 
@@ -49,7 +49,7 @@ def assert_file_parsed_properly(eventlog_url, eventlog_file, eventlog_s3_dir, cr
         )
 
     with stubber:
-        mocker.patch(BOTO_CLIENT_STUB_TARGET, new=lambda _: s3)
+        mocker.patch(BOTO_CLIENT_STUB_TARGET, new=s3)
         spark_app = create_spark_app_fn()
 
     stubber.assert_no_pending_responses()
@@ -159,7 +159,7 @@ def test_databricks_log_from_s3_dir(event_log_url, event_log_file_archive, event
                 )
 
     with stubber:
-        mocker.patch(BOTO_CLIENT_STUB_TARGET, new=lambda _: s3)
+        mocker.patch(BOTO_CLIENT_STUB_TARGET, new=s3)
         spark_app = create_spark_application(path=str(event_log_url))
 
     stubber.assert_no_pending_responses()
