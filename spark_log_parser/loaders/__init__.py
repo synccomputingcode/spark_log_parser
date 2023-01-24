@@ -12,14 +12,16 @@ from pydantic import BaseModel
 from aiodataloader import DataLoader
 from stream_unzip import stream_unzip
 
+logger = logging.getLogger("Loaders")
+
 FILE_SKIP_PATTERNS = [".DS_Store".lower(), "__MACOSX".lower(), "/."]
 
-logger = logging.getLogger("Loaders")
+DEFAULT_MAX_FILESIZE = 5000000000
 
 
 class ArchiveExtractionThresholds(BaseModel):
     entries = 100
-    size = 5000000000
+    size = DEFAULT_MAX_FILESIZE
 
 
 class ArchiveTooLargeError(AssertionError):
@@ -46,12 +48,20 @@ class FileChunkStreamWrapper:
     Note #2 - once `chunks` is consumed, calls to read/lines will return empty byte buffers
     """
 
-    def __init__(self, chunks: Iterator[bytes], maximum_file_size: int = None):
+    def __init__(self, chunks: Iterator[bytes], maximum_file_size: int = DEFAULT_MAX_FILESIZE):
         assert chunks
         self.total_size: int = 0
         self._chunks: Iterator[bytes] = chunks
         self._maximum_allowed_size: int = maximum_file_size
-        self._trailing_data: bytes = b''
+        self._buffer: bytearray = bytearray()
+        # Almost all the return values from self.read() will read out of this value instead of self._buffer.
+        #  This is because reads from a memoryview are no-copy, whereas slices from a bytes/bytearray will copy
+        #  the data. This means that if we fully read self._buffer, we would have fully duplicated the data at
+        #  least one time. When dealing with file sizes that may be many 10s of GBs, this ends up resulting in a
+        #  ton of memory overhead
+        self._buffer_memview: memoryview | None = None
+        self._buffer_position: int = 0  # Index of how far into _buffer/_buffer_memview we have read
+        self._consumed: bool = False
 
     def __iter__(self):
         for chunk in self._chunks:
@@ -61,58 +71,110 @@ class FileChunkStreamWrapper:
                 self._add_chunk_to_size(chunk)
                 yield chunk
 
-    def _add_chunk_to_size(self, chunk):
+    def _add_chunk_to_size(self, chunk) -> None:
         self.total_size += len(chunk)
-        if self._maximum_allowed_size is not None and self.total_size > self._maximum_allowed_size:
+        if self.total_size > self._maximum_allowed_size:
             raise ArchiveTooLargeError()
 
-    def read(self, size=-1) -> bytes:
-        content = self._trailing_data
-        self._trailing_data = b''
+    def _num_bytes_left_in_buffer(self) -> int:
+        return len(self._buffer) - self._buffer_position
 
-        if not size or size == -1:
+    def read(self, size=-1) -> bytes | bytearray | memoryview:
+        if self._consumed:
+            return b''
+
+        elif not size or size == -1:
             for chunk in self._chunks:
                 self._add_chunk_to_size(chunk)
-                content += chunk
+                self._buffer += chunk
+
+            self._consumed = True
+            return self._buffer
+
         else:
-            # iterate chunks until we've read at least `size` amount of data
-            for chunk in self._chunks:
-                self._add_chunk_to_size(chunk)
-                content += chunk
-                if len(content) > size:
-                    break
+            # Check if the data left in buffer if enough to satisfy the full read size...
+            if self._num_bytes_left_in_buffer() < size:
+                # If not, chop off everything that we've read out of the buffer, and start re-filling it. Reading
+                #  from our memoryview is actually slower here, since we end up having to convert that to bytes
+                #  anyway for our concatenation down below
+                self._buffer = self._buffer[self._buffer_position:]
+                self._buffer_position = 0
 
-            # Trim off any data that is past the provided `size` and hold on to it for subsequent `read` calls
-            if len(content) > size:
-                self._trailing_data = content[size:]
-                content = content[:size]
+                # iterate chunks until we've read at least `size` amount of data
+                for chunk in self._chunks:
+                    self._add_chunk_to_size(chunk)
+                    self._buffer += chunk
+                    if len(self._buffer) >= size:
+                        break
 
-        return content
+                # Freeze this buffer for subsequent reads from it. We use a memoryview in order to avoid making copies
+                #  of the data for every single read issued.
+                self._buffer_memview = memoryview(self._buffer).cast("B").toreadonly()
+
+            # If we have enough data in the buffer to satisfy this read, return that from the buffer and adjust
+            #  our read position accordingly
+            if self._num_bytes_left_in_buffer() >= size:
+                start_pos = self._buffer_position
+                self._buffer_position += size
+                return self._buffer_memview[start_pos:self._buffer_position]
+            else:
+                # Otherwise, we don't have enough data, which means that this is the last read for this iterator.
+                #  So now just return a copy of the data remaining in the buffer and mark this as consumed to prevent
+                #  future reads
+                content = self._buffer_memview[self._buffer_position:]
+                self._consumed = True
+                return content
+
+    _LINE_CHUNK_SIZE = 1024 * 1024
 
     def iter_lines(self) -> Iterator[bytes]:
         """
         Returns a stream of lines from self._chunks.
         """
-        for chunk in self._chunks:
-            self._add_chunk_to_size(chunk)
-            if self._trailing_data:
-                chunk = self._trailing_data + chunk
+        trailing_data = bytearray()
+        # We use a relatively large chunk_size here to minimize the number of times we have to enter this loop/copy data
+        while chunk := self.read(self._LINE_CHUNK_SIZE):
+            if trailing_data:
+                # Instead of appending via e.g. chunk = trailing_data + chunk, which causes a ton of data copying,
+                #  we can just write this chunk into our current line buffer. This is extremely helpful when we
+                #  encounter large files where all the data is actually on one line (i.e. a 500MB JSON file that was
+                #  written without any line breaks). This saves us 10s of seconds when processing these types of files
+                # This is safe to do here because trailing_data is never referenced outside of this function, and we
+                #  only ever return trailing_data when we are done reading in the whole file
+                trailing_data.extend(chunk)
+                chunk = trailing_data
+                trailing_data = bytearray()
 
-            lines = chunk.splitlines()
+            # In the case where we have no trailing_data, then our `chunk` may be a memoryview returned from
+            #  self.read(), which does not support splitlines(), so we need to copy this into a bytearray first
+            bs = chunk if isinstance(chunk, bytearray) else bytearray(chunk)
+
+            # Don't check for `\r\n` because that will be caught by checking for the individual characters
+            # Doing this similarly helps keep parsing fast for large single-line files, while having minimal performance
+            #  impact on files that actually have more than 1 line
+            if b'\n' in bs or b'\r' in bs:
+                lines = bs.splitlines()
+            else:
+                lines = [bs]
 
             # This condition checks if the last byte in our last line is the same as the last byte of our chunk -
             #  if it is, then that means that our last line did not end in a newline, and therefore we need to hang
             #  on to that line for the next iteration.
-            if lines and lines[-1] and chunk and lines[-1][-1] == chunk[-1]:
-                self._trailing_data = lines.pop()
-            else:
-                self._trailing_data = b''
+            if lines and lines[-1] and bs and lines[-1][-1] == bs[-1]:
+                # If the above condition is true, and our split lines is a list of length one, this means that no split
+                #  actually occurred. If that's the case, we can avoid a copy of this line by just setting our
+                #  trailing_data to the current bytearray that we're operating on
+                if len(lines) == 1:
+                    trailing_data = bs
+                    lines = []
+                else:
+                    trailing_data = bytearray(lines.pop())
 
-            for line in lines:
-                yield line
+            if lines:
+                yield from lines
 
-        if self._trailing_data:
-            yield self._trailing_data
+        if trailing_data:
+            yield trailing_data
 
 
 class ZipArchiveMemberStreamWrapper(FileChunkStreamWrapper):
@@ -183,6 +245,8 @@ class AbstractFileDataLoader(DataLoader, abc.ABC):
 
             size_left -= wrapped_bytes.total_size
 
+    _ARCHIVE_CHUNK_SIZE = 1024 * 1024
+
     def read_zip_archive(self, raw_archive_stream) -> Iterator[FileExtractionResult]:
         """
         Utility for unpacking a zip archive, asserting that the contents of that archive fall within our file-size
@@ -191,7 +255,7 @@ class AbstractFileDataLoader(DataLoader, abc.ABC):
         num_files = 0
         size_left = self._extraction_thresholds.size
 
-        for fname, fsize, chunks in stream_unzip(raw_archive_stream):
+        for fname, fsize, chunks in stream_unzip(raw_archive_stream, chunk_size=self._ARCHIVE_CHUNK_SIZE):
             num_files += 1
             if num_files > self._extraction_thresholds.entries:
                 raise ArchiveTooManyEntriesError()
