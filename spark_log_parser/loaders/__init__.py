@@ -1,4 +1,5 @@
 import abc
+import collections
 import gzip
 import tarfile
 import logging
@@ -6,7 +7,7 @@ import logging
 from dataclasses import dataclass
 from io import BufferedIOBase
 from pathlib import Path
-from typing import Iterator, TypeVar
+from typing import TypeVar, Iterator
 from urllib.parse import ParseResult
 
 from aiodataloader import DataLoader
@@ -15,6 +16,11 @@ from stream_unzip import stream_unzip
 logger = logging.getLogger("Loaders")
 
 FILE_SKIP_PATTERNS = [".DS_Store".lower(), "__MACOSX".lower(), "/."]
+
+
+# See the definition of `consume` here - https://docs.python.org/3/library/itertools.html#itertools-recipes
+def exhaust_iterator(iterator: Iterator) -> None:
+    collections.deque(iterator, maxlen=0)
 
 
 @dataclass
@@ -284,7 +290,9 @@ class AbstractFileDataLoader(DataLoader, abc.ABC):
         This method will ultimately return a sequence of tuples where the first item is the Path of the file that is
         currently open (if we are extracting an archive/directory, then this will be the name of the file within
         that location, not the name of the archive/directory itself), and the 2nd item is an Iterator of the bytes in
-        that file.
+        that file. Returned `FileStreamIterator`s will be fully consumed upon resumption of execution, since our archive
+        streams only support sequential reads (or in other words - we cannot advance to the next file in the archive
+        until the stream for the current file is exhausted).
         """
         if file_stream is None and filepath.is_dir():
             yield from self.extract_directory(filepath)
@@ -319,7 +327,9 @@ class AbstractFileDataLoader(DataLoader, abc.ABC):
                     # We may see files like {name}.zip.gz/.json.gz, so make sure we handle that appropriately
                     if len(suffixes) == 1:
                         wrapped = FileChunkStreamWrapper(file)
-                        yield filepath, self.read_file_stream(wrapped)
+                        fs_iter = self.read_file_stream(wrapped)
+                        yield filepath, fs_iter
+                        exhaust_iterator(fs_iter)
                     else:
                         new_path = Path(str(filepath).removesuffix(".gz"))
                         yield from self.extract(new_path, file)
@@ -331,14 +341,20 @@ class AbstractFileDataLoader(DataLoader, abc.ABC):
                     case None:
                         with open(filepath, "rb") as file:
                             wrapped = FileChunkStreamWrapper(file)
-                            yield filepath, self.read_file_stream(wrapped)
+                            fs_iter = self.read_file_stream(wrapped)
+                            yield filepath, fs_iter
+                            exhaust_iterator(fs_iter)
 
                     case FileChunkStreamWrapper():
-                        yield filepath, self.read_file_stream(file_stream)
+                        fs_iter = self.read_file_stream(file_stream)
+                        yield filepath, fs_iter
+                        exhaust_iterator(fs_iter)
 
                     case _:
                         wrapped = FileChunkStreamWrapper(file_stream)
-                        yield filepath, self.read_file_stream(wrapped)
+                        fs_iter = self.read_file_stream(wrapped)
+                        yield filepath, fs_iter
+                        exhaust_iterator(fs_iter)
 
             case _:
                 raise ValueError(f"Unknown file format {''.join(filepath.suffixes)}")
@@ -364,7 +380,7 @@ class LinesFileReaderMixin:
     """
 
     @staticmethod
-    def read_file_stream(file: FileChunkStreamWrapper):
+    def read_file_stream(file: FileChunkStreamWrapper) -> FileStreamIterator:
         yield from file.iter_lines()
 
 
@@ -375,5 +391,5 @@ class BlobFileReaderMixin:
     """
 
     @staticmethod
-    def read_file_stream(file: FileChunkStreamWrapper):
+    def read_file_stream(file: FileChunkStreamWrapper) -> FileStreamIterator:
         yield file.read()
