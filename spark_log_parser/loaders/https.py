@@ -29,7 +29,10 @@ class AbstractHTTPFileDataLoader(AbstractFileDataLoader, abc.ABC):
             raise AssertionError("Download is empty")
 
         wrapped = FileChunkStreamWrapper(response.iter_content(chunk_size=self._STREAM_CHUNK_SIZE))
-        yield from self.extract(Path(url), wrapped)
+        try:
+            yield from self.extract(Path(url), wrapped)
+        finally:
+            response.close()
 
 
 class HTTPFileBlobDataLoader(BlobFileReaderMixin, AbstractHTTPFileDataLoader):

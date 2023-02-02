@@ -14,7 +14,7 @@ def archive_paths():
     tarball = zip_to_tgz(zip_archive_path, file_suffix=".tgz")
     tarball_path = Path(tarball.name)
 
-    yield [zip_archive_path, tarball_path]
+    yield [tarball_path, zip_archive_path]
 
     # Make sure to remove this temp file after the test in this module are done
     tarball_path.unlink(missing_ok=True)

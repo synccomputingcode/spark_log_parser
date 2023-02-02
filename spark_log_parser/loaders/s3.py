@@ -54,18 +54,25 @@ class AbstractS3FileDataLoader(AbstractFileDataLoader, abc.ABC):
             if total_size > 20000000000:
                 raise AssertionError(f"Size limit exceeded while downloading from {filepath}.")
 
-        file_streams = []
+        responses: list[StreamingBody] = []
+        file_streams: list[FileChunkStreamWrapper] = []
         # TODO - this serially fetches all matching objects in the bucket at the moment...
         #  There is likely a better way to do this? It may require some ThreadExecutors, though
         for content in contents_to_fetch:
+            data: StreamingBody = self.s3.get_object(Bucket=bucket, Key=content["Key"])["Body"]
+            responses.append(data)
+
             # Wrap the botocore.response.StreamingBody and return that so that subsequent extraction can operate on the
             #  stream vs. loading all the files into memory
-            data: StreamingBody = self.s3.get_object(Bucket=bucket, Key=content["Key"])["Body"]
             wrapped = FileChunkStreamWrapper(data.iter_chunks(self._STREAM_CHUNK_SIZE))
             file_streams.append(wrapped)
 
-        for (content, filestream) in zip(contents_to_fetch, file_streams):
-            yield from self.extract(Path(content["Key"]), filestream)
+        try:
+            for (content, filestream) in zip(contents_to_fetch, file_streams):
+                yield from self.extract(Path(content["Key"]), filestream)
+        finally:
+            for data in responses:
+                data.close()
 
 
 class S3FileBlobDataLoader(BlobFileReaderMixin, AbstractS3FileDataLoader):
