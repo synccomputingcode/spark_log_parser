@@ -13,6 +13,8 @@ from urllib.parse import ParseResult
 from aiodataloader import DataLoader
 from stream_unzip import stream_unzip
 
+from spark_log_parser.parsing_models.exceptions import LogSubmissionException
+
 logger = logging.getLogger("Loaders")
 
 FILE_SKIP_PATTERNS = [".DS_Store".lower(), "__MACOSX".lower(), "/."]
@@ -348,7 +350,7 @@ class AbstractFileDataLoader(DataLoader, abc.ABC):
                         yield filepath, self.read_file_stream(wrapped)
 
             case _:
-                raise ValueError(f"Unknown file format {''.join(filepath.suffixes)}")
+                raise LogSubmissionException(f"Unknown file format {''.join(filepath.suffixes)}")
 
     @abc.abstractmethod
     def load_item(self, filepath: str | ParseResult) -> Iterator[FileExtractionResult]:
