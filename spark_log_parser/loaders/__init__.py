@@ -262,10 +262,8 @@ class AbstractFileDataLoader(DataLoader, abc.ABC):
                 continue
 
             wrapped_bytes = ZipArchiveMemberStreamWrapper(chunks, size_left)
-            subfile_iter = self.extract(Path(fname), wrapped_bytes)
-            for (path, filestream) in subfile_iter:
-                yield path, filestream
-                exhaust_iterator(filestream)
+            yield from self.extract(Path(fname), wrapped_bytes)
+            exhaust_iterator(wrapped_bytes)
 
             # We read this from the member wrapper itself instead of trusting the `fsize` that is given to us from
             #  above because we do not control this archive, and as such, we need to treat those fsize numbers as
