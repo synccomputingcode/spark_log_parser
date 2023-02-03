@@ -1,4 +1,5 @@
 import abc
+import collections
 import gzip
 import tarfile
 import logging
@@ -6,7 +7,7 @@ import logging
 from dataclasses import dataclass
 from io import BufferedIOBase
 from pathlib import Path
-from typing import Iterator, TypeVar
+from typing import TypeVar, Iterator
 from urllib.parse import ParseResult
 
 from aiodataloader import DataLoader
@@ -15,6 +16,11 @@ from stream_unzip import stream_unzip
 logger = logging.getLogger("Loaders")
 
 FILE_SKIP_PATTERNS = [".DS_Store".lower(), "__MACOSX".lower(), "/."]
+
+
+# See the definition of `consume` here - https://docs.python.org/3/library/itertools.html#itertools-recipes
+def exhaust_iterator(iterator: Iterator) -> None:
+    collections.deque(iterator, maxlen=0)
 
 
 @dataclass
@@ -257,6 +263,7 @@ class AbstractFileDataLoader(DataLoader, abc.ABC):
 
             wrapped_bytes = ZipArchiveMemberStreamWrapper(chunks, size_left)
             yield from self.extract(Path(fname), wrapped_bytes)
+            exhaust_iterator(wrapped_bytes)
 
             # We read this from the member wrapper itself instead of trusting the `fsize` that is given to us from
             #  above because we do not control this archive, and as such, we need to treat those fsize numbers as
@@ -364,7 +371,7 @@ class LinesFileReaderMixin:
     """
 
     @staticmethod
-    def read_file_stream(file: FileChunkStreamWrapper):
+    def read_file_stream(file: FileChunkStreamWrapper) -> FileStreamIterator:
         yield from file.iter_lines()
 
 
@@ -375,5 +382,5 @@ class BlobFileReaderMixin:
     """
 
     @staticmethod
-    def read_file_stream(file: FileChunkStreamWrapper):
+    def read_file_stream(file: FileChunkStreamWrapper) -> FileStreamIterator:
         yield file.read()
