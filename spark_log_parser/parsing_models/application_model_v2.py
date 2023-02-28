@@ -959,7 +959,7 @@ class UnparsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[str, 
         return spark_app
 
 
-class AbstractAmbiguousLogFormatSparkApplicationLoader(
+class BaseAmbiguousLogFormatSparkApplicationLoader(
         AbstractSparkApplicationDataLoader[SparkApplicationLoaderKey, tuple[bool, dict | ApplicationModel]], abc.ABC):
 
     def __init__(
@@ -1033,54 +1033,55 @@ class AbstractAmbiguousLogFormatSparkApplicationLoader(
 
         return spark_app
 
-    # None of these abstract methods actually need to be implemented because we will be calling into the proper
+    # None of these abstract methods actually need to do anything because we will be calling into the proper
     #  un/parsed SparkApplication loader based on the underlying data, and those loaders have these methods
-    #  implemented already
+    #  implemented already. If some class sub-classes this one, then these methods will just echo back the
+    #  spark_app that we already constructed
     def init_spark_application(self, raw_data) -> SparkApplication:
-        """See comment above for why this is left un-implemented"""
+        """See comment above for why this is implemented thusly"""
         pass
 
     def compute_sql_info(self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication) -> SparkApplication:
-        """See comment above for why this is left un-implemented"""
-        pass
+        """See comment above for why this is implemented thusly"""
+        return spark_app
 
     def compute_executor_info(self, raw_data: SparkApplicationRawDataType,
                               spark_app: SparkApplication) -> SparkApplication:
-        """See comment above for why this is left un-implemented"""
-        pass
+        """See comment above for why this is implemented thusly"""
+        return spark_app
 
     def compute_all_job_data(self, raw_data: SparkApplicationRawDataType,
                              spark_app: SparkApplication) -> SparkApplication:
-        """See comment above for why this is left un-implemented"""
-        pass
+        """See comment above for why this is implemented thusly"""
+        return spark_app
 
     def compute_all_task_data(self, raw_data: SparkApplicationRawDataType,
                               spark_app: SparkApplication) -> SparkApplication:
-        """See comment above for why this is left un-implemented"""
-        pass
+        """See comment above for why this is implemented thusly"""
+        return spark_app
 
     def compute_all_stage_data(self, raw_data: SparkApplicationRawDataType,
                                spark_app: SparkApplication) -> SparkApplication:
-        """See comment above for why this is left un-implemented"""
-        pass
+        """See comment above for why this is implemented thusly"""
+        return spark_app
 
     def compute_all_driver_accum_data(self, raw_data: SparkApplicationRawDataType,
                                       spark_app: SparkApplication) -> SparkApplication:
-        """See comment above for why this is left un-implemented"""
-        pass
+        """See comment above for why this is implemented thusly"""
+        return spark_app
 
     def compute_all_metadata(self, raw_data: SparkApplicationRawDataType,
                              spark_app: SparkApplication) -> SparkApplication:
-        """See comment above for why this is left un-implemented"""
-        pass
+        """See comment above for why this is implemented thusly"""
+        return spark_app
 
     def compute_recent_events(self, raw_data: SparkApplicationRawDataType,
                               spark_app: SparkApplication) -> SparkApplication:
-        """See comment above for why this is left un-implemented"""
-        pass
+        """See comment above for why this is implemented thusly"""
+        return spark_app
 
 
-class AmbiguousLogFormatSparkApplicationLoader(AbstractAmbiguousLogFormatSparkApplicationLoader[str]):
+class AmbiguousLogFormatSparkApplicationLoader(BaseAmbiguousLogFormatSparkApplicationLoader[str]):
     """
     Much of the time, we may not know whether a file given to us is for a parsed or unparsed eventlog without opening it
     up first. But, we don't want to have to open up a file and just throw it away if it's not what we initially
