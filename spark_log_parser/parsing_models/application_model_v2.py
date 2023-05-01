@@ -5,7 +5,7 @@ import logging
 import os
 import time
 from collections import defaultdict
-from typing import Generic, TypeVar
+from typing import Callable, Generic, TypedDict, TypeVar
 from urllib.parse import urlparse
 
 import boto3
@@ -26,22 +26,42 @@ from .validation_event_data import EventDataValidation
 logger = logging.getLogger("SparkApplication")
 
 
+class SparkApplicationInfo(TypedDict):
+    timestamp_start_ms: int
+    timestamp_end_ms: int
+    runtime_sec: float
+    name: str
+    id: str
+    spark_version: str
+    emr_version_tag: str
+    cloud_platform: str
+    cloud_provider: str
+    cluster_id: str
+
+
+class SparkApplicationMetadata(TypedDict):
+    application_info: SparkApplicationInfo
+    spark_params: dict[str, str | int | float | dict]
+    existsSQL: bool
+    existsExecutors: bool
+
+
 class SparkApplication:
     def __init__(self):
         # TODO - are these booleans actually necessary? Would `spark_app.sqlData is not None` suffice?
         self.existsSQL: bool = False
-        self.sqlData: pd.DataFrame = None
+        self.sqlData: pd.DataFrame | None = None
 
         self.existsExecutors: bool = False
-        self.executorData: pd.DataFrame = None
+        self.executorData: pd.DataFrame | None = None
 
-        self.metadata: dict = {}
+        self.metadata: SparkApplicationMetadata | None = None
 
         # TODO - these DataFrames should be better documented
-        self.jobData: pd.DataFrame = None
-        self.stageData: pd.DataFrame = None
-        self.taskData: pd.DataFrame = None
-        self.accumData: pd.DataFrame = None
+        self.jobData: pd.DataFrame | None = None
+        self.stageData: pd.DataFrame | None = None
+        self.taskData: pd.DataFrame | None = None
+        self.accumData: pd.DataFrame | None = None
 
     def to_dict(self):
         """
@@ -115,15 +135,29 @@ class SparkApplication:
 
 SparkApplicationRawDataType = TypeVar("SparkApplicationRawDataType")
 SparkApplicationLoaderKey = TypeVar("SparkApplicationLoaderKey")
+SparkApplicationClass = TypeVar("SparkApplicationClass", bound=SparkApplication)
 
 
 class AbstractSparkApplicationDataLoader(
-    DataLoader, Generic[SparkApplicationLoaderKey, SparkApplicationRawDataType], abc.ABC
+    DataLoader,
+    Generic[SparkApplicationLoaderKey, SparkApplicationRawDataType, SparkApplicationClass],
+    abc.ABC,
 ):
     """
     Defines the methods that other data loaders should implement in order to appropriately construct
     some SparkApplication. The order in which these methods are called is defined in construct_spark_application.
     """
+
+    def __init__(
+        self, spark_application_constructor: Callable[[], SparkApplicationClass] | None = None, **kwargs
+    ):
+        super().__init__(**kwargs)
+
+        self._spark_application_constructor = (
+            spark_application_constructor
+            if spark_application_constructor is not None
+            else lambda: SparkApplication()
+        )
 
     @abc.abstractmethod
     async def load_raw_datas(
@@ -136,16 +170,18 @@ class AbstractSparkApplicationDataLoader(
         """
 
     @abc.abstractmethod
-    def init_spark_application(self, raw_data: SparkApplicationRawDataType) -> SparkApplication:
+    def init_spark_application(
+        self, raw_data: SparkApplicationRawDataType
+    ) -> SparkApplicationClass:
         """
         Allows subclasses to provide their own instance of SparkApplication (or some sub-class)
         """
-        return SparkApplication()
+        return self._spark_application_constructor()
 
     @abc.abstractmethod
     def compute_sql_info(
-        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
-    ) -> SparkApplication:
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplicationClass
+    ) -> SparkApplicationClass:
         """
         This method is responsible for setting the following fields on spark_app:
 
@@ -155,8 +191,8 @@ class AbstractSparkApplicationDataLoader(
 
     @abc.abstractmethod
     def compute_executor_info(
-        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
-    ) -> SparkApplication:
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplicationClass
+    ) -> SparkApplicationClass:
         """
         This method is responsible for setting the following fields on spark_app:
 
@@ -166,8 +202,8 @@ class AbstractSparkApplicationDataLoader(
 
     @abc.abstractmethod
     def compute_all_job_data(
-        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
-    ) -> SparkApplication:
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplicationClass
+    ) -> SparkApplicationClass:
         """
         This method is responsible for setting the following fields on spark_app:
 
@@ -176,8 +212,8 @@ class AbstractSparkApplicationDataLoader(
 
     @abc.abstractmethod
     def compute_all_stage_data(
-        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
-    ) -> SparkApplication:
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplicationClass
+    ) -> SparkApplicationClass:
         """
         This method is responsible for setting the following fields on spark_app:
 
@@ -186,8 +222,8 @@ class AbstractSparkApplicationDataLoader(
 
     @abc.abstractmethod
     def compute_all_task_data(
-        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
-    ) -> SparkApplication:
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplicationClass
+    ) -> SparkApplicationClass:
         """
         This method is responsible for setting the following fields on spark_app:
 
@@ -196,8 +232,8 @@ class AbstractSparkApplicationDataLoader(
 
     @abc.abstractmethod
     def compute_all_driver_accum_data(
-        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
-    ) -> SparkApplication:
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplicationClass
+    ) -> SparkApplicationClass:
         """
         This method is responsible for setting the following fields on spark_app:
 
@@ -206,8 +242,8 @@ class AbstractSparkApplicationDataLoader(
 
     @abc.abstractmethod
     def compute_all_metadata(
-        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
-    ) -> SparkApplication:
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplicationClass
+    ) -> SparkApplicationMetadata | None:
         """
         This method is responsible for setting the following fields on spark_app:
 
@@ -216,8 +252,8 @@ class AbstractSparkApplicationDataLoader(
 
     @abc.abstractmethod
     def compute_recent_events(
-        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
-    ) -> SparkApplication:
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplicationClass
+    ) -> SparkApplicationClass:
         """
         This method is responsible for updating the "time_since_last_event" value on both:
 
@@ -230,7 +266,7 @@ class AbstractSparkApplicationDataLoader(
 
     def construct_spark_application(
         self, key: SparkApplicationLoaderKey, raw_data: SparkApplicationRawDataType
-    ) -> SparkApplication:
+    ) -> SparkApplicationClass:
         """
         Generic 'recipe' for constructing a SparkApplication from some raw source of data.
         """
@@ -241,7 +277,11 @@ class AbstractSparkApplicationDataLoader(
         spark_app = self.compute_all_task_data(raw_data, spark_app)
         spark_app = self.compute_all_stage_data(raw_data, spark_app)
         spark_app = self.compute_all_driver_accum_data(raw_data, spark_app)
-        spark_app = self.compute_all_metadata(raw_data, spark_app)
+
+        metadata = self.compute_all_metadata(raw_data, spark_app)
+        if metadata is not None:
+            spark_app.metadata = metadata
+
         spark_app = self.compute_recent_events(raw_data, spark_app)
         return spark_app
 
@@ -254,13 +294,15 @@ class AbstractSparkApplicationDataLoader(
         ]
 
 
-class ParsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[str, dict]):
+class ParsedLogSparkApplicationLoader(
+    AbstractSparkApplicationDataLoader[str, dict, SparkApplication]
+):
     """
     Creates a SparkApplication from a parsed JSON representation of that application. Useful for re-hydrating
     parsed logs that were saved somewhere (or submitted directly to us)
     """
 
-    def __init__(self, json_loader: JSONBlobDataLoader, **kwargs):
+    def __init__(self, json_loader: JSONBlobDataLoader | None, **kwargs):
         super().__init__(**kwargs)
 
         self._json_data_loader: JSONBlobDataLoader = json_loader
@@ -351,19 +393,22 @@ class ParsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[str, di
 
         return spark_app
 
-    def compute_all_metadata(self, raw_data: dict, spark_app: SparkApplication) -> SparkApplication:
-        spark_app.metadata = raw_data.get("metadata", {})
-        return spark_app
+    def compute_all_metadata(
+        self, raw_data: dict, spark_app: SparkApplication
+    ) -> SparkApplicationMetadata:
+        return raw_data.get("metadata", {})
 
 
-class UnparsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[str, ApplicationModel]):
+class UnparsedLogSparkApplicationLoader(
+    AbstractSparkApplicationDataLoader[str, ApplicationModel, SparkApplication]
+):
     """
     From a raw set of Spark log lines, constructs a SparkApplication
     """
 
     def __init__(
         self,
-        json_lines_loader: JSONLinesDataLoader,
+        json_lines_loader: JSONLinesDataLoader | None,
         stdout_path: str = None,
         debug: bool = False,
         **kwargs,
@@ -491,7 +536,6 @@ class UnparsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[str, 
         spark_app.existsExecutors = True
         df = defaultdict(lambda: [])
         for xid, executor in app_model.executors.items():
-
             # There appears to be a scenario in Spark where if an executor is started and then stopped very quickly,
             #  that executor's startup routine will cause an exception, killing the executor. Since the startup routine
             #  never actually finished, a `start_time` is never registered. Databricks Autoscaling or Spot Terminations
@@ -928,26 +972,26 @@ class UnparsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[str, 
 
     def compute_all_metadata(
         self, raw_data: ApplicationModel, spark_app: SparkApplication
-    ) -> SparkApplication:
+    ) -> SparkApplicationMetadata:
         app_model = raw_data
-        spark_app.metadata = {
-            "application_info": {
-                "timestamp_start_ms": int(app_model.start_time * 1000),
-                "timestamp_end_ms": int(app_model.finish_time * 1000),
-                "runtime_sec": app_model.finish_time - app_model.start_time,
-                "name": app_model.app_name,
-                "id": app_model.spark_metadata["spark.app.id"],
-                "spark_version": app_model.spark_version,
-                "emr_version_tag": app_model.emr_version_tag,
-                "cloud_platform": app_model.cloud_platform,
-                "cloud_provider": app_model.cloud_provider,
-                "cluster_id": app_model.cluster_id,
-            },
+        app_info: SparkApplicationInfo = {
+            "timestamp_start_ms": int(app_model.start_time * 1000),
+            "timestamp_end_ms": int(app_model.finish_time * 1000),
+            "runtime_sec": app_model.finish_time - app_model.start_time,
+            "name": app_model.app_name,
+            "id": app_model.spark_metadata["spark.app.id"],
+            "spark_version": app_model.spark_version,
+            "emr_version_tag": app_model.emr_version_tag,
+            "cloud_platform": app_model.cloud_platform,
+            "cloud_provider": app_model.cloud_provider,
+            "cluster_id": app_model.cluster_id,
+        }
+        return {
+            "application_info": app_info,
             "spark_params": app_model.spark_metadata,
             "existsSQL": spark_app.existsSQL,
             "existsExecutors": spark_app.existsExecutors,
         }
-        return spark_app
 
     def compute_recent_events(
         self, raw_data: ApplicationModel, spark_app: SparkApplication
@@ -988,33 +1032,36 @@ class UnparsedLogSparkApplicationLoader(AbstractSparkApplicationDataLoader[str, 
 
 class BaseAmbiguousLogFormatSparkApplicationLoader(
     AbstractSparkApplicationDataLoader[
-        SparkApplicationLoaderKey, tuple[bool, dict | ApplicationModel]
+        SparkApplicationLoaderKey, tuple[bool, dict | ApplicationModel], SparkApplicationClass
     ],
     abc.ABC,
 ):
     def __init__(
         self,
         json_lines_loader: JSONLinesDataLoader,
+        spark_application_constructor: Callable[[], SparkApplicationClass] | None = None,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(spark_application_constructor=spark_application_constructor, **kwargs)
 
         self._json_lines_loader: JSONLinesDataLoader = json_lines_loader
         # These "sub-loaders" won't actually be loading the raw data, so we don't need to pass them any dataloaders
         #  We just want to use them to construct our SparkApplications based on whether the data handed to us is a
         #  parsed or unparsed eventlog
         self._parsed_app_loader: ParsedLogSparkApplicationLoader = ParsedLogSparkApplicationLoader(
-            None
+            None, spark_application_constructor=spark_application_constructor
         )
         self._unparsed_app_loader: UnparsedLogSparkApplicationLoader = (
-            UnparsedLogSparkApplicationLoader(None)
+            UnparsedLogSparkApplicationLoader(
+                None, spark_application_constructor=spark_application_constructor
+            )
         )
 
-    def _construct_from_parsed_representation(self, key: str, data: tuple[bool, dict]):
+    def _construct_from_parsed_representation(self, key: str, data: dict):
         return self._parsed_app_loader.construct_spark_application(key, data)
 
     def _construct_from_unparsed_representation(
-        self, key: str, data: tuple[bool, ApplicationModel]
+        self, key: str, data: ApplicationModel
     ):
         return self._unparsed_app_loader.construct_spark_application(key, data)
 
@@ -1054,8 +1101,8 @@ class BaseAmbiguousLogFormatSparkApplicationLoader(
         return ret
 
     def _construct_base_spark_application(
-        self, key: str, raw_data: tuple[bool, dict | ApplicationModel | Exception]
-    ) -> SparkApplication | Exception:
+        self, key: str | None, raw_data: tuple[bool, dict | ApplicationModel | Exception]
+    ) -> SparkApplicationClass | Exception:
         """
         Given an initial piece of raw_data, calls into the appropriate "sub-loader" based on the detected file format,
         i.e. whether the eventlog was delivered to us already-parsed.
@@ -1075,62 +1122,64 @@ class BaseAmbiguousLogFormatSparkApplicationLoader(
 
     # None of these abstract methods actually need to do anything because we will be calling into the proper
     #  un/parsed SparkApplication loader based on the underlying data, and those loaders have these methods
-    #  implemented already. If some class sub-classes this one, then these methods will just echo back the
+    #  implemented already. If some class subclasses this one, then these methods will just echo back the
     #  spark_app that we already constructed
-    def init_spark_application(self, raw_data) -> SparkApplication:
+    def init_spark_application(self, raw_data) -> SparkApplicationClass:
         """See comment above for why this is implemented thusly"""
         pass
 
     def compute_sql_info(
-        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
-    ) -> SparkApplication:
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplicationClass
+    ) -> SparkApplicationClass:
         """See comment above for why this is implemented thusly"""
         return spark_app
 
     def compute_executor_info(
-        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
-    ) -> SparkApplication:
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplicationClass
+    ) -> SparkApplicationClass:
         """See comment above for why this is implemented thusly"""
         return spark_app
 
     def compute_all_job_data(
-        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
-    ) -> SparkApplication:
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplicationClass
+    ) -> SparkApplicationClass:
         """See comment above for why this is implemented thusly"""
         return spark_app
 
     def compute_all_task_data(
-        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
-    ) -> SparkApplication:
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplicationClass
+    ) -> SparkApplicationClass:
         """See comment above for why this is implemented thusly"""
         return spark_app
 
     def compute_all_stage_data(
-        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
-    ) -> SparkApplication:
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplicationClass
+    ) -> SparkApplicationClass:
         """See comment above for why this is implemented thusly"""
         return spark_app
 
     def compute_all_driver_accum_data(
-        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
-    ) -> SparkApplication:
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplicationClass
+    ) -> SparkApplicationClass:
         """See comment above for why this is implemented thusly"""
         return spark_app
 
     def compute_all_metadata(
-        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
-    ) -> SparkApplication:
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplicationClass
+    ) -> SparkApplicationMetadata | None:
         """See comment above for why this is implemented thusly"""
-        return spark_app
+        return None
 
     def compute_recent_events(
-        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplication
-    ) -> SparkApplication:
+        self, raw_data: SparkApplicationRawDataType, spark_app: SparkApplicationClass
+    ) -> SparkApplicationClass:
         """See comment above for why this is implemented thusly"""
         return spark_app
 
 
-class AmbiguousLogFormatSparkApplicationLoader(BaseAmbiguousLogFormatSparkApplicationLoader[str]):
+class AmbiguousLogFormatSparkApplicationLoader(
+    BaseAmbiguousLogFormatSparkApplicationLoader[str, SparkApplication]
+):
     """
     Much of the time, we may not know whether a file given to us is for a parsed or unparsed eventlog without opening it
     up first. But, we don't want to have to open up a file and just throw it away if it's not what we initially
