@@ -170,7 +170,7 @@ class AbstractSparkApplicationDataLoader(
         """
 
     @abc.abstractmethod
-    def init_spark_application(
+    async def init_spark_application(
         self, raw_data: SparkApplicationRawDataType
     ) -> SparkApplicationClass:
         """
@@ -264,13 +264,13 @@ class AbstractSparkApplicationDataLoader(
         to complete before this stage/SQL event started executing.
         """
 
-    def construct_spark_application(
+    async def construct_spark_application(
         self, key: SparkApplicationLoaderKey, raw_data: SparkApplicationRawDataType
     ) -> SparkApplicationClass:
         """
         Generic 'recipe' for constructing a SparkApplication from some raw source of data.
         """
-        spark_app = self.init_spark_application(raw_data)
+        spark_app = await self.init_spark_application(raw_data)
         spark_app = self.compute_sql_info(raw_data, spark_app)
         spark_app = self.compute_executor_info(raw_data, spark_app)
         spark_app = self.compute_all_job_data(raw_data, spark_app)
@@ -289,7 +289,7 @@ class AbstractSparkApplicationDataLoader(
         raw_datas = await self.load_raw_datas(keys)
         # Make sure we bubble up any Exceptions from load_raw_datas appropriately
         return [
-            self.construct_spark_application(key, data) if not isinstance(data, Exception) else data
+            await self.construct_spark_application(key, data) if not isinstance(data, Exception) else data
             for (key, data) in zip(keys, raw_datas)
         ]
 
@@ -313,8 +313,8 @@ class ParsedLogSparkApplicationLoader(
         """
         return await self._json_data_loader.load_many(keys)
 
-    def init_spark_application(self, raw_data) -> SparkApplication:
-        return super().init_spark_application(raw_data)
+    async def init_spark_application(self, raw_data) -> SparkApplication:
+        return await super().init_spark_application(raw_data)
 
     def compute_recent_events(
         self, raw_data: dict, spark_app: SparkApplication
@@ -456,9 +456,9 @@ class UnparsedLogSparkApplicationLoader(
 
         return app_models
 
-    def init_spark_application(self, raw_data: ApplicationModel) -> SparkApplication:
+    async def init_spark_application(self, raw_data: ApplicationModel) -> SparkApplication:
         self.validate_app_model(raw_data)
-        return super().init_spark_application(raw_data)
+        return await super().init_spark_application(raw_data)
 
     def compute_sql_info(
         self, raw_data: ApplicationModel, spark_app: SparkApplication
@@ -1057,13 +1057,13 @@ class BaseAmbiguousLogFormatSparkApplicationLoader(
             )
         )
 
-    def _construct_from_parsed_representation(self, key: str, data: dict):
-        return self._parsed_app_loader.construct_spark_application(key, data)
+    async def _construct_from_parsed_representation(self, key: str, data: dict):
+        return await self._parsed_app_loader.construct_spark_application(key, data)
 
-    def _construct_from_unparsed_representation(
+    async def _construct_from_unparsed_representation(
         self, key: str, data: ApplicationModel
     ):
-        return self._unparsed_app_loader.construct_spark_application(key, data)
+        return await self._unparsed_app_loader.construct_spark_application(key, data)
 
     async def _load_raw_datas(
         self, keys: list[str]
@@ -1100,7 +1100,7 @@ class BaseAmbiguousLogFormatSparkApplicationLoader(
 
         return ret
 
-    def _construct_base_spark_application(
+    async def _construct_base_spark_application(
         self, key: str | None, raw_data: tuple[bool, dict | ApplicationModel | Exception]
     ) -> SparkApplicationClass | Exception:
         """
@@ -1114,9 +1114,9 @@ class BaseAmbiguousLogFormatSparkApplicationLoader(
         if isinstance(data, Exception):
             spark_app = data
         elif is_parsed:
-            spark_app = self._construct_from_parsed_representation(key, data)
+            spark_app = await self._construct_from_parsed_representation(key, data)
         else:
-            spark_app = self._construct_from_unparsed_representation(key, data)
+            spark_app = await self._construct_from_unparsed_representation(key, data)
 
         return spark_app
 
@@ -1124,7 +1124,7 @@ class BaseAmbiguousLogFormatSparkApplicationLoader(
     #  un/parsed SparkApplication loader based on the underlying data, and those loaders have these methods
     #  implemented already. If some class subclasses this one, then these methods will just echo back the
     #  spark_app that we already constructed
-    def init_spark_application(self, raw_data) -> SparkApplicationClass:
+    async def init_spark_application(self, raw_data) -> SparkApplicationClass:
         """See comment above for why this is implemented thusly"""
         pass
 
@@ -1192,10 +1192,10 @@ class AmbiguousLogFormatSparkApplicationLoader(
     ) -> list[tuple[bool, dict | ApplicationModel | Exception]]:
         return await self._load_raw_datas(keys)
 
-    def construct_spark_application(
+    async def construct_spark_application(
         self, key: str, raw_data: tuple[bool, dict | ApplicationModel | Exception]
     ) -> SparkApplication:
-        return self._construct_base_spark_application(key, raw_data)
+        return await self._construct_base_spark_application(key, raw_data)
 
 
 def create_spark_application(*, path, thresholds=None) -> SparkApplication:
