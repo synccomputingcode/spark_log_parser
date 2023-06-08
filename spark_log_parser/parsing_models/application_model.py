@@ -242,8 +242,8 @@ class ApplicationModel:
             if expected_rollover_log_numbers_seen.difference(rollover_log_numbers_seen):
                 raise LogSubmissionException(
                     error_message=("Rollover logs were detected, but there were fewer than expected.\n"
-                                   + f"Expected to receive rollover numbers: {', '.join(expected_rollover_log_numbers_seen)}, "
-                                   + f"but instead received: {', '.join(sorted(rollover_log_numbers_seen))} ")
+                                   + f"Expected to receive rollover numbers: {', '.join((str(n) for n in expected_rollover_log_numbers_seen))}, "
+                                   + f"but instead received: {', '.join((str(n) for n in sorted(rollover_log_numbers_seen)))} ")
                 )
 
         for task in self.tasks:
