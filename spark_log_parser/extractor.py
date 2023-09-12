@@ -7,15 +7,15 @@ import zipfile
 from pathlib import Path
 from urllib.parse import ParseResult, urlparse
 
-import requests
 import boto3
+import requests
 from pydantic import BaseModel
 
 
 class ExtractThresholds(BaseModel):
-    entries = 100
-    size = 5000000000
-    ratio = 100
+    entries: int = 100
+    size: int = 5000000000
+    ratio: int = 100
 
 
 class Extractor:
@@ -249,11 +249,11 @@ class Extractor:
             """
             s3 protocol formats look like -
                 s3://some/path/to/file/file.ext
-            
+
             When parsed with urllib.parse, the first part of the path will be parsed as the `netloc` (which is
-            'some' from our above example). The rest of the path will show up under `path`. So when we call 
+            'some' from our above example). The rest of the path will show up under `path`. So when we call
             s3_client.list_objects_v2(Bucket=netloc, Prefix=path), we are basically filtering sub-paths within
-            that top-level bucket that match that path! TBD is there is a more efficient way to do this. 
+            that top-level bucket that match that path! TBD is there is a more efficient way to do this.
             """
             source_bucket = self.source_url.netloc
             source_key = self.source_url.path.lstrip("/")
