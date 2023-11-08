@@ -577,7 +577,7 @@ class UnparsedLogSparkApplicationLoader(
     ) -> SparkApplication:
         app_model = raw_data
         t1 = time.time()
-        dfs: list[pd.DataFrame] = [pd.DataFrame()]
+        dfs: list[pd.DataFrame] = []
         ref_time = app_model.start_time
         for jid, job in app_model.jobs.items():
 
@@ -599,8 +599,10 @@ class UnparsedLogSparkApplicationLoader(
                     }
                 )
             )
-
-        df = pd.concat(dfs)
+        if dfs:
+            df = pd.concat(dfs)
+        else:
+            df = pd.DataFrame()
         if len(df) > 0:
             df = df.sort_values(by="job_id")
             df = df.set_index("job_id")
