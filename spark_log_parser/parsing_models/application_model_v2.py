@@ -573,7 +573,7 @@ class UnparsedLogSparkApplicationLoader(
     ) -> SparkApplication:
         app_model = raw_data
         t1 = time.time()
-        dfs: list[pd.DataFrame] = []
+        dfs: list[pd.DataFrame] = [pd.DataFrame()]
         ref_time = app_model.start_time
         for jid, job in app_model.jobs.items():
 

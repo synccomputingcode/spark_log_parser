@@ -251,9 +251,6 @@ class ApplicationModel:
             stage = self.stages[stage_id]
             stage.add_task(task)
 
-        if len(self.stages) == 0:
-            raise LazyEventValidationException("No stages detected in Spark Eventlog")
-
         for stage_id, stage in self.stages.items():
             if stage.submission_time is None:
                 raise UrgentEventValidationException(missing_event=f"Stage {stage_id} Submit")
