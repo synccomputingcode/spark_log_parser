@@ -4,7 +4,11 @@ from typing import Iterator
 import numpy
 
 from .dag_model import DagModel
-from .exceptions import UrgentEventValidationException, LogSubmissionException, LazyEventValidationException
+from .exceptions import (
+    LazyEventValidationException,
+    LogSubmissionException,
+    UrgentEventValidationException,
+)
 from .executor_model import ExecutorModel
 from .job_model import JobModel
 from .stage_model import StageModel
@@ -241,9 +245,11 @@ class ApplicationModel:
             expected_rollover_log_numbers_seen = set(range(max_rollover + 1))
             if expected_rollover_log_numbers_seen.difference(rollover_log_numbers_seen):
                 raise LogSubmissionException(
-                    error_message=("Rollover logs were detected, but there were fewer than expected.\n"
-                                   + f"Expected to receive rollover numbers: {', '.join((str(n) for n in expected_rollover_log_numbers_seen))}, "
-                                   + f"but instead received: {', '.join((str(n) for n in sorted(rollover_log_numbers_seen)))} ")
+                    error_message=(
+                        "Rollover logs were detected, but there were fewer than expected.\n"
+                        + f"Expected to receive rollover numbers: {', '.join((str(n) for n in expected_rollover_log_numbers_seen))}, "
+                        + f"but instead received: {', '.join((str(n) for n in sorted(rollover_log_numbers_seen)))} "
+                    )
                 )
 
         for task in self.tasks:
