@@ -5,7 +5,6 @@ import numpy
 
 from .dag_model import DagModel
 from .exceptions import (
-    LazyEventValidationException,
     LogSubmissionException,
     UrgentEventValidationException,
 )
