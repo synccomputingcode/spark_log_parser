@@ -149,7 +149,9 @@ class AbstractSparkApplicationDataLoader(
     """
 
     def __init__(
-        self, spark_application_constructor: Callable[[], SparkApplicationClass] | None = None, **kwargs
+        self,
+        spark_application_constructor: Callable[[], SparkApplicationClass] | None = None,
+        **kwargs,
     ):
         super().__init__(**kwargs)
 
@@ -289,7 +291,9 @@ class AbstractSparkApplicationDataLoader(
         raw_datas = await self.load_raw_datas(keys)
         # Make sure we bubble up any Exceptions from load_raw_datas appropriately
         return [
-            await self.construct_spark_application(key, data) if not isinstance(data, Exception) else data
+            await self.construct_spark_application(key, data)
+            if not isinstance(data, Exception)
+            else data
             for (key, data) in zip(keys, raw_datas)
         ]
 
@@ -595,8 +599,10 @@ class UnparsedLogSparkApplicationLoader(
                     }
                 )
             )
-
-        df = pd.concat(dfs)
+        if dfs:
+            df = pd.concat(dfs)
+        else:
+            df = pd.DataFrame()
         if len(df) > 0:
             df = df.sort_values(by="job_id")
             df = df.set_index("job_id")
@@ -1060,9 +1066,7 @@ class BaseAmbiguousLogFormatSparkApplicationLoader(
     async def _construct_from_parsed_representation(self, key: str, data: dict):
         return await self._parsed_app_loader.construct_spark_application(key, data)
 
-    async def _construct_from_unparsed_representation(
-        self, key: str, data: ApplicationModel
-    ):
+    async def _construct_from_unparsed_representation(self, key: str, data: ApplicationModel):
         return await self._unparsed_app_loader.construct_spark_application(key, data)
 
     async def _load_raw_datas(
