@@ -27,7 +27,7 @@ dependencies = [
     "ujson==5.7.0",
     "stream-unzip==0.0.78",
     "pydantic==2.1.1",
-    "requests==2.28.1",
+    "requests==2.32.0",
     "aiodataloader==0.3.0"
 ]
 dynamic = ["version", "description"]
